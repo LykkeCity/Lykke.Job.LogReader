@@ -1,6 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Globalization;
+using System.IO;
 using System.Linq;
+using System.Net.Sockets;
 using System.Threading.Tasks;
 using AzureStorage.Tables;
 using Common;
@@ -8,7 +11,9 @@ using Common.Log;
 using Lykke.Job.LogReader.Core.Settings.JobSettings;
 using Lykke.Logs;
 using Lykke.SettingsReader;
+using Microsoft.WindowsAzure.Storage.File;
 using Microsoft.WindowsAzure.Storage.Table;
+using NetStash.Log;
 
 namespace Lykke.Job.LogReader.PeriodicalHandlers
 {
@@ -51,27 +56,32 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
 
             if (data != null)
             {
-                foreach (var logEntity in data.OrderBy(e => e.RowKey))
+                using (TcpClient client = new TcpClient("logstash.lykke-elk-dev.svc.cluster.local", 5043))
+                using (StreamWriter writer = new StreamWriter(client.GetStream()))
                 {
-                    table.Time = logEntity.Timestamp;
-                    
-                    var dto = new LogDto()
+                    foreach (var logEntity in data.OrderBy(e => e.RowKey))
                     {
-                        DateTime = logEntity.DateTime,
-                        Level = logEntity.Level,
-                        Version = logEntity.Version,
-                        Component = logEntity.Component,
-                        Process = logEntity.Process,
-                        Context = logEntity.Context,
-                        Type = logEntity.Type,
-                        Stack = logEntity.Stack,
-                        Msg = logEntity.Msg,
-                        Table = table.Name
-                    };
-                    
+                        table.Time = logEntity.Timestamp;
 
+                        var dto = new LogDto()
+                        {
+                            DateTime = logEntity.DateTime,
+                            Level = logEntity.Level,
+                            Version = logEntity.Version,
+                            Component = logEntity.Component,
+                            Process = logEntity.Process,
+                            Context = logEntity.Context,
+                            Type = logEntity.Type,
+                            Stack = logEntity.Stack,
+                            Msg = logEntity.Msg,
+                            Table = table.Name
+                        };
 
-                    Console.WriteLine(dto.ToJson());
+                        var json = dto.ToJson();
+
+                        await writer.WriteLineAsync(json);
+                        //Console.WriteLine("{0}: {1}", dto.DateTime, dto.Msg);
+                    }
                 }
             }
         }

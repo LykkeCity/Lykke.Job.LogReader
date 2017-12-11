@@ -3,5 +3,12 @@
     public class ReaderSettings
     {
         public string[] LogTables { get; set; }
+        public LogStashClient LogStash { get; set; }
+
+        public class LogStashClient
+        {
+            public string Host { get; set; }
+            public int Port { get; set; }
+        }
     }
 }
