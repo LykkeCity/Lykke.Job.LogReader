@@ -25,7 +25,8 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
                 var info = new TableInfo
                 {
                     Entity = AzureTableStorage<LogEntity>.Create(dbsettings.ConnectionString(e => e.LogsConnString), name, log),
-                    Time = DateTimeOffset.UtcNow
+                    Time = DateTimeOffset.UtcNow,
+                    Name = name
                 };
                 _tables.Add(info);
             }
@@ -64,7 +65,8 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
                         Context = logEntity.Context,
                         Type = logEntity.Type,
                         Stack = logEntity.Stack,
-                        Msg = logEntity.Msg
+                        Msg = logEntity.Msg,
+                        Table = table.Name
                     };
                     
 
