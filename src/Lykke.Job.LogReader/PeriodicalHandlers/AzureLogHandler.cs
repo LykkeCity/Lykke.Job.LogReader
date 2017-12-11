@@ -49,8 +49,29 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
 
         private async Task HandleTable(TableInfo table)
         {
+            var lastTime = table.Time;
+            var pk = table.Time.ToString("yyyy-MM-dd");
+
+            await CheckEvents(table, pk, lastTime);
+
+            if (DateTime.Now.Date != lastTime.Date)
+            {
+                table.Time = new DateTimeOffset(lastTime.Date.AddDays(1));
+                lastTime = table.Time;
+                pk = table.Time.ToString("yyyy-MM-dd");
+                await CheckEvents(table, pk, lastTime);
+            }
+        }
+
+        private static async Task CheckEvents(TableInfo table, string pk, DateTimeOffset lastTime)
+        {
             var query = new TableQuery<LogEntity>()
-                .Where(TableQuery.GenerateFilterConditionForDate("Timestamp", QueryComparisons.GreaterThan, table.Time));
+                .Where(
+                    TableQuery.CombineFilters(
+                        TableQuery.GenerateFilterCondition("PartitionKey", QueryComparisons.Equal, pk),
+                        TableOperators.And,
+                        TableQuery.GenerateFilterConditionForDate("Timestamp", QueryComparisons.GreaterThan, lastTime)
+                    ));
 
             var data = await table.Entity.WhereAsync(query);
 
