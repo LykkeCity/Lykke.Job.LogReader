@@ -11,6 +11,7 @@ using Common.Log;
 using Lykke.Job.LogReader.Core.Settings.JobSettings;
 using Lykke.Logs;
 using Lykke.SettingsReader;
+using Microsoft.AspNetCore.Mvc.ViewFeatures.Internal;
 using Microsoft.WindowsAzure.Storage.File;
 using Microsoft.WindowsAzure.Storage.Table;
 using NetStash.Log;
@@ -20,6 +21,7 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
     public class AzureLogHandler : TimerPeriod
     {
         private readonly List<TableInfo> _tables;
+        private readonly ILog _log;
 
         public AzureLogHandler(ILog log, ReaderSettings settings, IReloadingManager<DbSettings> dbsettings) :
             base(nameof(AzureLogHandler), (int)TimeSpan.FromSeconds(10).TotalMilliseconds, log)
@@ -35,36 +37,52 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
                 };
                 _tables.Add(info);
             }
+            _log = log;
         }
 
         public override async Task Execute()
         {
+            var count = 0;
+
             foreach (var table in _tables)
             {
-                await HandleTable(table);
+                try
+                {
+                    count += await HandleTable(table);
+                }
+                catch (Exception ex)
+                {
+                    await _log.WriteErrorAsync(nameof(AzureLogHandler), nameof(Execute), table.Name, ex);
+                }
             }
 
-            await Task.CompletedTask;
+            Console.WriteLine($"{DateTime.UtcNow:s} End of iteration, count events: {count}");
         }
 
-        private async Task HandleTable(TableInfo table)
+        private async Task<int> HandleTable(TableInfo table)
         {
             var lastTime = table.Time;
             var pk = table.Time.ToString("yyyy-MM-dd");
+            var index = 0;
 
-            await CheckEvents(table, pk, lastTime);
+            index += await CheckEvents(table, pk, lastTime);
 
             if (DateTime.Now.Date != lastTime.Date)
             {
                 table.Time = new DateTimeOffset(lastTime.Date.AddDays(1));
                 lastTime = table.Time;
                 pk = table.Time.ToString("yyyy-MM-dd");
-                await CheckEvents(table, pk, lastTime);
+
+                index += await CheckEvents(table, pk, lastTime);
             }
+
+            return index;
         }
 
-        private static async Task CheckEvents(TableInfo table, string pk, DateTimeOffset lastTime)
+        private static async Task<int> CheckEvents(TableInfo table, string pk, DateTimeOffset lastTime)
         {
+            var index = 0;
+
             var query = new TableQuery<LogEntity>()
                 .Where(
                     TableQuery.CombineFilters(
@@ -102,9 +120,13 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
 
                         await writer.WriteLineAsync(json);
                         //Console.WriteLine("{0}: {1}", dto.DateTime, dto.Msg);
+
+                        index++;
                     }
                 }
             }
+
+            return index;
         }
     }
 }

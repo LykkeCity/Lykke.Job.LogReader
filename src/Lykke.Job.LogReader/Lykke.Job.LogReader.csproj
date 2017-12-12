@@ -55,8 +55,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Lykke.Job.LogReader.AzureRepositories\Lykke.Job.LogReader.AzureRepositories.csproj" />
-    <ProjectReference Include="..\Lykke.Job.LogReader.Core\Lykke.Job.LogReader.Core.csproj" />
-    <ProjectReference Include="..\Lykke.Job.LogReader.Services\Lykke.Job.LogReader.Services.csproj" />
+    <Folder Include="NewFolder\" />
   </ItemGroup>
 </Project>

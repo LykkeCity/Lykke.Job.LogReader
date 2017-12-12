@@ -9,8 +9,4 @@
     <PackageReference Include="Lykke.Common" Version="3.0.0" />
   </ItemGroup>
 
-  <ItemGroup>
-    <ProjectReference Include="..\..\contract\Lykke.Job.LogReader.Contract\Lykke.Job.LogReader.Contract.csproj" />
-  </ItemGroup>
-
 </Project>
