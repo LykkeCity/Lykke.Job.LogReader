@@ -12,6 +12,7 @@ using Lykke.Job.LogReader.Core.Settings.JobSettings;
 using Lykke.Logs;
 using Lykke.SettingsReader;
 using Microsoft.AspNetCore.Mvc.ViewFeatures.Internal;
+using Microsoft.WindowsAzure.Storage;
 using Microsoft.WindowsAzure.Storage.File;
 using Microsoft.WindowsAzure.Storage.Table;
 using NetStash.Log;
@@ -20,28 +21,27 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
 {
     public class AzureLogHandler : TimerPeriod
     {
-        private readonly List<TableInfo> _tables;
+        private List<TableInfo> _tables;
         private readonly ILog _log;
+        private IReloadingManager<string> _connStr;
+        private readonly List<string> _exclute;
 
         public AzureLogHandler(ILog log, ReaderSettings settings, IReloadingManager<DbSettings> dbsettings) :
             base(nameof(AzureLogHandler), (int)TimeSpan.FromSeconds(10).TotalMilliseconds, log)
         {
-            _tables = new List<TableInfo>();
-            foreach (var name in settings.LogTables)
-            {
-                var info = new TableInfo
-                {
-                    Entity = AzureTableStorage<LogEntity>.Create(dbsettings.ConnectionString(e => e.LogsConnString), name, log),
-                    Time = DateTimeOffset.UtcNow,
-                    Name = name
-                };
-                _tables.Add(info);
-            }
+            _exclute = settings.ExcludeTables.ToList();
+            _exclute.Add("LogReaderLog");
+            _connStr = dbsettings.ConnectionString(e => e.LogsConnString);
             _log = log;
         }
 
         public override async Task Execute()
         {
+            if (_tables == null)
+            {
+                await FindTables();
+            }
+
             var count = 0;
 
             foreach (var table in _tables)
@@ -57,6 +57,39 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
             }
 
             Console.WriteLine($"{DateTime.UtcNow:s} End of iteration, count events: {count}");
+        }
+
+        private async Task FindTables()
+        {
+            await _connStr.Reload();
+
+            CloudStorageAccount account = CloudStorageAccount.Parse(_connStr.CurrentValue);
+            var tableClient = account.CreateCloudTableClient();
+            var names = (await tableClient.ListTablesSegmentedAsync(null)).Select(e => e.Name).Where(e => !_exclute.Contains(e)).ToArray();
+
+            await _log.WriteInfoAsync(nameof(AzureLogHandler), nameof(FindTables), $"Find {names.Length} in subscribtion");
+
+            var tables = new List<TableInfo>();
+            foreach (var name in names)
+            {
+                CloudTable table = tableClient.GetTableReference(name);
+                var operationGet = new TableQuery<LogEntity>().Take(1);
+                var row = (await table.ExecuteQuerySegmentedAsync(operationGet, null)).FirstOrDefault();
+                if (row != null && row.DateTime != DateTime.MinValue && row.Level!=null && row.Msg != null)
+                {
+                    var info = new TableInfo
+                    {
+                        Entity = AzureTableStorage<LogEntity>.Create(_connStr, name, _log),
+                        Time = DateTimeOffset.UtcNow,
+                        Name = name
+                    };
+                    tables.Add(info);
+                    Console.WriteLine(name);
+                }
+            }
+
+            _tables = tables;
+            await _log.WriteInfoAsync(nameof(AzureLogHandler), nameof(FindTables), $"Start handling {_tables.Count} tables");
         }
 
         private async Task<int> HandleTable(TableInfo table)

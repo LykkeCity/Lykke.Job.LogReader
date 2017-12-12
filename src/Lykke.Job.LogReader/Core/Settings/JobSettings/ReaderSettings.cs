@@ -2,7 +2,7 @@
 {
     public class ReaderSettings
     {
-        public string[] LogTables { get; set; }
+        public string[] ExcludeTables { get; set; }
         public LogStashClient LogStash { get; set; }
 
         public class LogStashClient
