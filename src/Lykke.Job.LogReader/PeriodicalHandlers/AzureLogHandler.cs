@@ -84,7 +84,6 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
                         Name = name
                     };
                     tables.Add(info);
-                    Console.WriteLine(name);
                 }
             }
 
@@ -152,7 +151,6 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
                         var json = dto.ToJson();
 
                         await writer.WriteLineAsync(json);
-                        //Console.WriteLine("{0}: {1}", dto.DateTime, dto.Msg);
 
                         index++;
                     }
