@@ -5,6 +5,10 @@ VisualStudioVersion = 15.0.27004.2010
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Lykke.Job.LogReader", "src\Lykke.Job.LogReader\Lykke.Job.LogReader.csproj", "{5566FD3E-0DB6-4BF3-A98D-4A1181B3E02C}"
 EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Lykke.Job.LogReader.Tests", "tests\Lykke.Job.LogReader.Tests\Lykke.Job.LogReader.Tests.csproj", "{3AC48AE7-2D02-4984-9ECE-6BDE803D88E2}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "test", "test", "{437BA8DA-D9B6-496F-81C9-004CD5992ECE}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -15,9 +19,16 @@ Global
 		{5566FD3E-0DB6-4BF3-A98D-4A1181B3E02C}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{5566FD3E-0DB6-4BF3-A98D-4A1181B3E02C}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{5566FD3E-0DB6-4BF3-A98D-4A1181B3E02C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3AC48AE7-2D02-4984-9ECE-6BDE803D88E2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3AC48AE7-2D02-4984-9ECE-6BDE803D88E2}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3AC48AE7-2D02-4984-9ECE-6BDE803D88E2}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3AC48AE7-2D02-4984-9ECE-6BDE803D88E2}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{3AC48AE7-2D02-4984-9ECE-6BDE803D88E2} = {437BA8DA-D9B6-496F-81C9-004CD5992ECE}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {D2419990-C093-4EE2-AFE9-80857ECBB147}
