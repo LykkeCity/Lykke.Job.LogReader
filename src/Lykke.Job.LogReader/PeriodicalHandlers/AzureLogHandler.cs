@@ -23,7 +23,8 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
     {
         private List<TableInfo> _tables;
         private readonly ILog _log;
-        private IReloadingManager<string> _connStr;
+        private readonly ReaderSettings _settings;
+        private readonly IReloadingManager<string> _connStr;
         private readonly List<string> _exclute;
 
         public AzureLogHandler(ILog log, ReaderSettings settings, IReloadingManager<DbSettings> dbsettings) :
@@ -33,6 +34,7 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
             _exclute.Add("LogReaderLog");
             _connStr = dbsettings.ConnectionString(e => e.LogsConnString);
             _log = log;
+            _settings = settings;
         }
 
         public override async Task Execute()
@@ -111,7 +113,7 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
             return index;
         }
 
-        private static async Task<int> CheckEvents(TableInfo table, string pk, DateTimeOffset lastTime)
+        private async Task<int> CheckEvents(TableInfo table, string pk, DateTimeOffset lastTime)
         {
             var index = 0;
 
@@ -123,37 +125,55 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
                         TableQuery.GenerateFilterConditionForDate("Timestamp", QueryComparisons.GreaterThan, lastTime)
                     ));
 
-            var data = await table.Entity.WhereAsync(query);
+            IEnumerable<LogEntity> data;
+            try
+            {
+                data = await table.Entity.WhereAsync(query);
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(e);
+                throw;
+            }
+            
 
             if (data != null)
             {
-                using (TcpClient client = new TcpClient("logstash.lykke-elk-dev.svc.cluster.local", 5043))
-                using (StreamWriter writer = new StreamWriter(client.GetStream()))
+                try
                 {
-                    foreach (var logEntity in data.OrderBy(e => e.RowKey))
+                    using (TcpClient client = new TcpClient(_settings.LogStash.Host, _settings.LogStash.Port))
+                    using (StreamWriter writer = new StreamWriter(client.GetStream()))
                     {
-                        table.Time = logEntity.Timestamp;
-
-                        var dto = new LogDto()
+                        foreach (var logEntity in data.OrderBy(e => e.RowKey))
                         {
-                            DateTime = logEntity.DateTime,
-                            Level = logEntity.Level,
-                            Version = logEntity.Version,
-                            Component = logEntity.Component,
-                            Process = logEntity.Process,
-                            Context = logEntity.Context,
-                            Type = logEntity.Type,
-                            Stack = logEntity.Stack,
-                            Msg = logEntity.Msg,
-                            Table = table.Name
-                        };
+                            table.Time = logEntity.Timestamp;
 
-                        var json = dto.ToJson();
+                            var dto = new LogDto()
+                            {
+                                DateTime = logEntity.DateTime,
+                                Level = logEntity.Level,
+                                Version = logEntity.Version,
+                                Component = logEntity.Component,
+                                Process = logEntity.Process,
+                                Context = logEntity.Context,
+                                Type = logEntity.Type,
+                                Stack = logEntity.Stack,
+                                Msg = logEntity.Msg,
+                                Table = table.Name
+                            };
 
-                        await writer.WriteLineAsync(json);
+                            var json = dto.ToJson();
 
-                        index++;
+                            await writer.WriteLineAsync(json);
+
+                            index++;
+                        }
                     }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine(ex);
+                    throw;
                 }
             }
 
