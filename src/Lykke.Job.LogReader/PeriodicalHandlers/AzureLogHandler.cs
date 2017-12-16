@@ -11,6 +11,7 @@ using Common.Log;
 using Lykke.Job.LogReader.Core.Settings.JobSettings;
 using Lykke.Logs;
 using Lykke.SettingsReader;
+using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.WindowsAzure.Storage;
 using Microsoft.WindowsAzure.Storage.Table;
 
@@ -44,7 +45,7 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
 #pragma warning restore 4014
             }
 
-            Console.WriteLine($"{DateTime.UtcNow:s} Begin of iteration");
+            await _log.WriteInfoAsync(nameof(AzureLogHandler), nameof(Execute), "Begin of iteration");
 
             var count = 0;
 
@@ -53,7 +54,7 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
             var countFromTables = await Task.WhenAll(tableList.Select(HandleTableAndWatch).ToArray());
             count = countFromTables.Sum();
 
-            Console.WriteLine($"{DateTime.UtcNow:s} End of iteration, count events: {count}");
+            await _log.WriteInfoAsync(nameof(AzureLogHandler), nameof(Execute), $"End of iteration, count events: {count}");
         }
 
         private async Task<int> HandleTableAndWatch(TableInfo table)
@@ -65,9 +66,9 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
                 sw.Start();
                 var countNew = await HandleTable(table);
                 sw.Stop();
-                if (countNew > 300 || sw.ElapsedMilliseconds > 5000)
+                if (countNew > 600 || sw.ElapsedMilliseconds > 10000)
                 {
-                    Console.WriteLine($"table {table.Name} ({table.Account}), count: {countNew}, time: {sw.ElapsedMilliseconds} ms");
+                    await _log.WriteInfoAsync(nameof(AzureLogHandler), nameof(HandleTableAndWatch), $"table {table.Name} ({table.Account}), count: {countNew}, time: {sw.ElapsedMilliseconds} ms");
                 }
                 count += countNew;
             }
@@ -196,7 +197,7 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
             }
             catch (Exception e)
             {
-                Console.WriteLine(e);
+                await _log.WriteErrorAsync(nameof(AzureLogHandler), nameof(CheckEvents), e);
                 throw;
             }
             
@@ -237,7 +238,7 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine(ex);
+                    await _log.WriteErrorAsync(nameof(AzureLogHandler), nameof(CheckEvents), ex);
                     throw;
                 }
             }
