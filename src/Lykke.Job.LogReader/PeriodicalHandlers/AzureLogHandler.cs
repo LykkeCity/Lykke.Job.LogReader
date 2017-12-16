@@ -221,7 +221,8 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
                                 Type = logEntity.Type,
                                 Stack = logEntity.Stack,
                                 Msg = logEntity.Msg,
-                                Table = table.Name
+                                Table = table.Name,
+                                Account = table.Account
                             };
 
                             var json = dto.ToJson();
