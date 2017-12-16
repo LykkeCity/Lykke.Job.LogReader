@@ -48,24 +48,16 @@ namespace Lykke.Job.LogReader.Modules
 
             builder.RegisterType<ShutdownManager>()
                 .As<IShutdownManager>();
-            RegisterPeriodicalHandlers(builder);
 
-            builder.RegisterInstance(_settings.Reader);
-            builder.RegisterInstance(_dbSettingsManager).As<IReloadingManager<DbSettings>>();
-
-            // TODO: Add your dependencies here
-
-            builder.Populate(_services);
-        }
-
-        private void RegisterPeriodicalHandlers(ContainerBuilder builder)
-        {
-            // TODO: You should register each periodical handler in DI container as IStartable singleton and autoactivate it
-
-            builder.RegisterType<AzureLogHandler>()
+            builder.RegisterInstance(new AzureLogHandler(_log, _settings.Reader, _dbSettingsManager))
                 .As<IStartable>()
                 .AutoActivate()
                 .SingleInstance();
+            
+            builder.RegisterInstance(_settings.Reader);
+            builder.RegisterInstance(_settings.Db);
+
+            builder.Populate(_services);
         }
 
     }
