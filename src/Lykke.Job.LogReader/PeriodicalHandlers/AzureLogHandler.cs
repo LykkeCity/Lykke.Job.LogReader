@@ -100,8 +100,9 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
                     await _log.WriteInfoAsync(nameof(AzureLogHandler), nameof(FindTables), accountName, $"Find {names.Length} tables in subscribtion");
 
                     var countAdd = 0;
-
+#if DEBUG
                     var countHandling = 0;
+#endif
                     foreach (var name in names)
                     {
                         try
@@ -127,9 +128,10 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
                             }
 #if DEBUG
                             countHandling++;
+                            Console.Write($"\rhandling: {countHandling} / {names.Length}                   ");
 #endif
 
-                            Console.Write($"\rhandling: {countHandling} / {names.Length}                   ");
+
                         }
                         catch (Exception ex)
                         {
