@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net.Sockets;
+using System.Threading;
 using System.Threading.Tasks;
 using AzureStorage.Tables;
 using Common;
@@ -24,6 +25,10 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
         private readonly ReaderSettings _settings;
         private readonly IReloadingManager<DbSettings> _dbsettings;
         private readonly List<string> _exclute;
+
+        private bool _isConnect = false;
+        private TcpClient _client;
+        private StreamWriter _writer;
 
         public AzureLogHandler(ILog log, ReaderSettings settings, IReloadingManager<DbSettings> dbsettings) :
             base(nameof(AzureLogHandler), (int)TimeSpan.FromSeconds(10).TotalMilliseconds, log)
@@ -164,7 +169,12 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
             var pk = table.Time.ToString("yyyy-MM-dd");
             var index = 0;
 
-            index += await CheckEvents(table, pk, lastTime);
+            var (i, ts) = await CheckEvents(table, pk, lastTime);
+            if (i > 0 && ts.HasValue)
+            {
+                index += i;
+                table.Time = ts.Value;
+            }
 
             if (DateTime.Now.Date != lastTime.Date)
             {
@@ -172,13 +182,18 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
                 lastTime = table.Time;
                 pk = table.Time.ToString("yyyy-MM-dd");
 
-                index += await CheckEvents(table, pk, lastTime);
+                (i, ts) = await CheckEvents(table, pk, lastTime);
+                if (i > 0 && ts.HasValue)
+                {
+                    index += i;
+                    table.Time = ts.Value;
+                }
             }
 
             return index;
         }
 
-        private async Task<int> CheckEvents(TableInfo table, string pk, DateTimeOffset lastTime)
+        private async Task<(int, DateTimeOffset?)> CheckEvents(TableInfo table, string pk, DateTimeOffset lastTime)
         {
             var index = 0;
 
@@ -200,40 +215,19 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
                 await _log.WriteErrorAsync(nameof(AzureLogHandler), nameof(CheckEvents), e);
                 throw;
             }
-            
+
+            DateTimeOffset? newtime = null;
 
             if (data != null)
             {
                 try
                 {
-                    using (TcpClient client = new TcpClient(_settings.LogStash.Host, _settings.LogStash.Port))
-                    using (StreamWriter writer = new StreamWriter(client.GetStream()))
+                    foreach (var logEntity in data.OrderBy(e => e.Timestamp))
                     {
-                        foreach (var logEntity in data.OrderBy(e => e.RowKey))
-                        {
-                            table.Time = logEntity.Timestamp;
+                        await SendData(table, logEntity);
+                        index++;
+                        newtime = logEntity.Timestamp;
 
-                            var dto = new LogDto()
-                            {
-                                DateTime = logEntity.DateTime,
-                                Level = logEntity.Level,
-                                Version = logEntity.Version,
-                                Component = logEntity.Component,
-                                Process = logEntity.Process,
-                                Context = logEntity.Context,
-                                Type = logEntity.Type,
-                                Stack = logEntity.Stack,
-                                Msg = logEntity.Msg,
-                                Table = table.Name,
-                                AccountName = table.Account
-                            };
-
-                            var json = dto.ToJson();
-
-                            await writer.WriteLineAsync(json);
-
-                            index++;
-                        }
                     }
                 }
                 catch (Exception ex)
@@ -243,7 +237,61 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
                 }
             }
 
-            return index;
+            return (index, newtime);
+        }
+
+        private readonly SemaphoreSlim _lock = new SemaphoreSlim(1, 1);
+
+        private async Task SendData(TableInfo table, LogEntity logEntity)
+        {
+            while (true)
+            {
+                await _lock.WaitAsync();
+                try
+                {
+                    if (!_isConnect || _writer == null)
+                    {
+                        _writer?.Dispose();
+                        _client?.Dispose();
+
+                        _client = new TcpClient(_settings.LogStash.Host, _settings.LogStash.Port);
+                        _writer = new StreamWriter(_client.GetStream());
+                        _isConnect = true;
+                    }
+
+                    table.Time = logEntity.Timestamp;
+
+                    var dto = new LogDto()
+                    {
+                        DateTime = logEntity.DateTime,
+                        Level = logEntity.Level,
+                        Version = logEntity.Version,
+                        Component = logEntity.Component,
+                        Process = logEntity.Process,
+                        Context = logEntity.Context,
+                        Type = logEntity.Type,
+                        Stack = logEntity.Stack,
+                        Msg = logEntity.Msg,
+                        Table = table.Name,
+                        AccountName = table.Account
+                    };
+
+                    var json = dto.ToJson();
+
+                    await _writer.WriteLineAsync(json);
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    await _log.WriteInfoAsync(nameof(AzureLogHandler), nameof(SendData), $"{_settings.LogStash.Host}:_settings.LogStash.Port", ex.ToString());
+                    await Task.Delay(2000);
+                    _isConnect = false;
+                }
+                finally
+                {
+                    _lock.Release();
+                }
+            }
         }
     }
 
