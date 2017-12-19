@@ -212,7 +212,7 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
             }
             catch (Exception e)
             {
-                await _log.WriteInfoAsync(nameof(AzureLogHandler), nameof(CheckEvents), e);
+                await _log.WriteInfoAsync(nameof(AzureLogHandler), nameof(CheckEvents), e.ToString());
                 throw;
             }
 
@@ -232,7 +232,7 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
                 }
                 catch (Exception ex)
                 {
-                    await _log.WriteInfoAsync(nameof(AzureLogHandler), nameof(CheckEvents), ex);
+                    await _log.WriteInfoAsync(nameof(AzureLogHandler), nameof(CheckEvents), ex.ToString());
                     throw;
                 }
             }
