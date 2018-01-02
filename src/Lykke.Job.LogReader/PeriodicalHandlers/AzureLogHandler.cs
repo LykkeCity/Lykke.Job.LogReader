@@ -6,6 +6,7 @@ using System.Linq;
 using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Transactions;
 using AzureStorage.Tables;
 using Common;
 using Common.Log;
@@ -15,6 +16,7 @@ using Lykke.SettingsReader;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.WindowsAzure.Storage;
 using Microsoft.WindowsAzure.Storage.Table;
+using Newtonsoft.Json.Linq;
 
 namespace Lykke.Job.LogReader.PeriodicalHandlers
 {
@@ -114,7 +116,7 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
                         try
                         {
                             CloudTable table = tableClient.GetTableReference(name);
-                            var operationGet = new TableQuery<LogEntity>().Take(1);
+                            var operationGet = new TableQuery<LogEntityExt>().Take(1);
                             var row = (await table.ExecuteQuerySegmentedAsync(operationGet, null)).FirstOrDefault();
                             if (row != null && row.DateTime != DateTime.MinValue && row.Level != null && row.Msg != null)
                             {
@@ -122,7 +124,7 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
                                 {
                                     var info = new TableInfo
                                     {
-                                        Entity = AzureTableStorage<LogEntity>.Create(new FakeReloadingManager(connString), name, _log),
+                                        Entity = AzureTableStorage<LogEntityExt>.Create(new FakeReloadingManager(connString), name, _log),
                                         Time = DateTimeOffset.UtcNow,
                                         Name = name,
                                         Account = accountName,
@@ -197,7 +199,7 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
         {
             var index = 0;
 
-            var query = new TableQuery<LogEntity>()
+            var query = new TableQuery<LogEntityExt>()
                 .Where(
                     TableQuery.CombineFilters(
                         TableQuery.GenerateFilterCondition("PartitionKey", QueryComparisons.Equal, pk),
@@ -205,7 +207,7 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
                         TableQuery.GenerateFilterConditionForDate("Timestamp", QueryComparisons.GreaterThan, lastTime)
                     ));
 
-            IEnumerable<LogEntity> data;
+            IEnumerable<LogEntityExt> data;
             try
             {
                 data = await table.Entity.WhereAsync(query);
@@ -224,7 +226,8 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
                 {
                     foreach (var logEntity in data.OrderBy(e => e.Timestamp))
                     {
-                        await SendData(table, logEntity);
+                        PreparingContext(logEntity);
+                        //await SendData(table, logEntity);
                         index++;
                         newtime = logEntity.Timestamp;
 
@@ -240,9 +243,27 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
             return (index, newtime);
         }
 
+        private void PreparingContext(LogEntityExt logEntity)
+        {
+            if (_settings.ParseContextAsJson && (string.IsNullOrEmpty(logEntity.Context) || !logEntity.Context.StartsWith('{')))
+            {
+                return;
+            }
+
+            try
+            {
+                var ctx = JObject.Parse(logEntity.Context);
+                logEntity.ContextData = ctx;
+            }
+            // ReSharper disable once EmptyGeneralCatchClause
+            catch (Exception)
+            {
+            }
+        }
+
         private readonly SemaphoreSlim _lock = new SemaphoreSlim(1, 1);
 
-        private async Task SendData(TableInfo table, LogEntity logEntity)
+        private async Task SendData(TableInfo table, LogEntityExt logEntity)
         {
             while (true)
             {
@@ -307,6 +328,11 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
         public Task<string> Reload() => Task.FromResult(_value);
         public bool HasLoaded => true;
         public string CurrentValue => _value;
+    }
+
+    public class LogEntityExt : LogEntity
+    {
+        public object ContextData { get; set; }
     }
 }
 ;

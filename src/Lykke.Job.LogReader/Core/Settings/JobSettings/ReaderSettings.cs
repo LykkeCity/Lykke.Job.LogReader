@@ -1,8 +1,11 @@
-﻿namespace Lykke.Job.LogReader.Core.Settings.JobSettings
+﻿using System.Runtime.CompilerServices;
+
+namespace Lykke.Job.LogReader.Core.Settings.JobSettings
 {
     public class ReaderSettings
     {
         public string[] ExcludeTables { get; set; }
+        public bool ParseContextAsJson { get; set; }
         public LogStashClient LogStash { get; set; }
 
         public class LogStashClient

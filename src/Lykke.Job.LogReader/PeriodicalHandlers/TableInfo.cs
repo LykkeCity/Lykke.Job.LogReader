@@ -6,7 +6,7 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
 {
     public class TableInfo
     {
-        public INoSQLTableStorage<LogEntity> Entity { get; set; }
+        public INoSQLTableStorage<LogEntityExt> Entity { get; set; }
         public DateTimeOffset Time { get; set; }
         public string Name { get; set; }
         public string Account { get; set; }
