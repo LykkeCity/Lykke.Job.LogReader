@@ -33,7 +33,7 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
         private StreamWriter _writer;
 
         public AzureLogHandler(ILog log, ReaderSettings settings, IReloadingManager<DbSettings> dbsettings) :
-            base(nameof(AzureLogHandler), (int)TimeSpan.FromSeconds(10).TotalMilliseconds, log)
+            base(nameof(AzureLogHandler), (int)TimeSpan.FromSeconds(1).TotalMilliseconds, log)
         {
             _exclute = settings.ExcludeTables.ToList();
             _exclute.Add("LogReaderLog");
@@ -116,7 +116,7 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
                         try
                         {
                             CloudTable table = tableClient.GetTableReference(name);
-                            var operationGet = new TableQuery<LogEntityExt>().Take(1);
+                            var operationGet = new TableQuery<LogEntity>().Take(1);
                             var row = (await table.ExecuteQuerySegmentedAsync(operationGet, null)).FirstOrDefault();
                             if (row != null && row.DateTime != DateTime.MinValue && row.Level != null && row.Msg != null)
                             {
@@ -124,8 +124,9 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
                                 {
                                     var info = new TableInfo
                                     {
-                                        Entity = AzureTableStorage<LogEntityExt>.Create(new FakeReloadingManager(connString), name, _log),
+                                        Entity = AzureTableStorage<LogEntity>.Create(new FakeReloadingManager(connString), name, _log),
                                         Time = DateTimeOffset.UtcNow,
+                                        LastRowKey = DateTime.UtcNow.ToString("HH:mm:ss.fffffff"),
                                         Name = name,
                                         Account = accountName,
                                         ConnString = connString
@@ -168,46 +169,40 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
         private async Task<int> HandleTable(TableInfo table)
         {
             var lastTime = table.Time;
+            var lastRowKey = table.LastRowKey;
             var pk = table.Time.ToString("yyyy-MM-dd");
             var index = 0;
 
-            var (i, ts) = await CheckEvents(table, pk, lastTime);
-            if (i > 0 && ts.HasValue)
-            {
-                index += i;
-                table.Time = ts.Value;
-            }
+            var i = await CheckEvents(table, pk, lastTime, lastRowKey);
+            index += i;
 
             if (DateTime.Now.Date != lastTime.Date)
             {
                 table.Time = new DateTimeOffset(lastTime.Date.AddDays(1));
                 lastTime = table.Time;
+                lastRowKey = table.LastRowKey;
                 pk = table.Time.ToString("yyyy-MM-dd");
 
-                (i, ts) = await CheckEvents(table, pk, lastTime);
-                if (i > 0 && ts.HasValue)
-                {
-                    index += i;
-                    table.Time = ts.Value;
-                }
+                i = await CheckEvents(table, pk, lastTime, lastRowKey);
+                index += i;
             }
 
             return index;
         }
 
-        private async Task<(int, DateTimeOffset?)> CheckEvents(TableInfo table, string pk, DateTimeOffset lastTime)
+        private async Task<int> CheckEvents(TableInfo table, string pk, DateTimeOffset lastTime, string lastRowKey)
         {
             var index = 0;
 
-            var query = new TableQuery<LogEntityExt>()
+            var query = new TableQuery<LogEntity>()
                 .Where(
                     TableQuery.CombineFilters(
                         TableQuery.GenerateFilterCondition("PartitionKey", QueryComparisons.Equal, pk),
                         TableOperators.And,
-                        TableQuery.GenerateFilterConditionForDate("Timestamp", QueryComparisons.GreaterThan, lastTime)
+                        TableQuery.GenerateFilterCondition("RowKey", QueryComparisons.GreaterThan, lastRowKey)
                     ));
 
-            IEnumerable<LogEntityExt> data;
+            IEnumerable<LogEntity> data;
             try
             {
                 data = await table.Entity.WhereAsync(query);
@@ -218,19 +213,16 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
                 throw;
             }
 
-            DateTimeOffset? newtime = null;
-
             if (data != null)
             {
                 try
                 {
-                    foreach (var logEntity in data.OrderBy(e => e.Timestamp))
+                    foreach (var logEntity in data.Where(e => e.Timestamp > lastTime).OrderBy(e => e.Timestamp))
                     {
-                        PreparingContext(logEntity);
-                        //await SendData(table, logEntity);
+                        await SendData(table, logEntity);
+                        table.Time = logEntity.Timestamp;
+                        table.LastRowKey = logEntity.RowKey;
                         index++;
-                        newtime = logEntity.Timestamp;
-
                     }
                 }
                 catch (Exception ex)
@@ -240,12 +232,12 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
                 }
             }
 
-            return (index, newtime);
+            return (index);
         }
 
-        private void PreparingContext(LogEntityExt logEntity)
+        private void PreparingContext(LogDto logEntity)
         {
-            if (_settings.ParseContextAsJson && (string.IsNullOrEmpty(logEntity.Context) || !logEntity.Context.StartsWith('{')))
+            if (!_settings.ParseContextAsJson && (string.IsNullOrEmpty(logEntity.Context) || !logEntity.Context.StartsWith('{')))
             {
                 return;
             }
@@ -263,7 +255,7 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
 
         private readonly SemaphoreSlim _lock = new SemaphoreSlim(1, 1);
 
-        private async Task SendData(TableInfo table, LogEntityExt logEntity)
+        private async Task SendData(TableInfo table, LogEntity logEntity)
         {
             while (true)
             {
@@ -280,8 +272,6 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
                         _isConnect = true;
                     }
 
-                    table.Time = logEntity.Timestamp;
-
                     var dto = new LogDto()
                     {
                         DateTime = logEntity.DateTime,
@@ -296,6 +286,7 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
                         Table = table.Name,
                         AccountName = table.Account
                     };
+                    PreparingContext(dto);
 
                     var json = dto.ToJson();
 
@@ -328,11 +319,6 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
         public Task<string> Reload() => Task.FromResult(_value);
         public bool HasLoaded => true;
         public string CurrentValue => _value;
-    }
-
-    public class LogEntityExt : LogEntity
-    {
-        public object ContextData { get; set; }
     }
 }
 ;
