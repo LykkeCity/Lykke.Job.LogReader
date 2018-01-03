@@ -125,7 +125,7 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
                                     var info = new TableInfo
                                     {
                                         Entity = AzureTableStorage<LogEntity>.Create(new FakeReloadingManager(connString), name, _log),
-                                        Time = DateTimeOffset.UtcNow,
+                                        PartitionKey = DateTimeOffset.UtcNow.ToString("yyyy-MM-dd"),
                                         LastRowKey = DateTime.UtcNow.ToString("HH:mm:ss.fffffff"),
                                         Name = name,
                                         Account = accountName,
@@ -168,38 +168,35 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
 
         private async Task<int> HandleTable(TableInfo table)
         {
-            var lastTime = table.Time;
-            var lastRowKey = table.LastRowKey;
-            var pk = table.Time.ToString("yyyy-MM-dd");
             var index = 0;
 
-            var i = await CheckEvents(table, pk, lastTime, lastRowKey);
+            var nowDate = DateTime.UtcNow.Date;
+
+            var i = await CheckEvents(table);
             index += i;
 
-            if (DateTime.Now.Date != lastTime.Date)
+            if (nowDate != DateTime.Parse(table.PartitionKey))
             {
-                table.Time = new DateTimeOffset(lastTime.Date.AddDays(1));
-                lastTime = table.Time;
-                lastRowKey = table.LastRowKey;
-                pk = table.Time.ToString("yyyy-MM-dd");
+                table.PartitionKey = DateTime.UtcNow.ToString("yyyy-MM-dd");
+                table.LastRowKey = "00";
 
-                i = await CheckEvents(table, pk, lastTime, lastRowKey);
+                i = await CheckEvents(table);
                 index += i;
             }
 
             return index;
         }
 
-        private async Task<int> CheckEvents(TableInfo table, string pk, DateTimeOffset lastTime, string lastRowKey)
+        private async Task<int> CheckEvents(TableInfo table)
         {
             var index = 0;
 
             var query = new TableQuery<LogEntity>()
                 .Where(
                     TableQuery.CombineFilters(
-                        TableQuery.GenerateFilterCondition("PartitionKey", QueryComparisons.Equal, pk),
+                        TableQuery.GenerateFilterCondition("PartitionKey", QueryComparisons.Equal, table.PartitionKey),
                         TableOperators.And,
-                        TableQuery.GenerateFilterCondition("RowKey", QueryComparisons.GreaterThan, lastRowKey)
+                        TableQuery.GenerateFilterCondition("RowKey", QueryComparisons.GreaterThan, table.LastRowKey)
                     ));
 
             IEnumerable<LogEntity> data;
@@ -217,10 +214,9 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
             {
                 try
                 {
-                    foreach (var logEntity in data.Where(e => e.Timestamp > lastTime).OrderBy(e => e.Timestamp))
+                    foreach (var logEntity in data.OrderBy(e => e.Timestamp))
                     {
                         await SendData(table, logEntity);
-                        table.Time = logEntity.Timestamp;
                         table.LastRowKey = logEntity.RowKey;
                         index++;
                     }
@@ -232,7 +228,7 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
                 }
             }
 
-            return (index);
+            return index;
         }
 
         private void PreparingContext(LogDto logEntity)
