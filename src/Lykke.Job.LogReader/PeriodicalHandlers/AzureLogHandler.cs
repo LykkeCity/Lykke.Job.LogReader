@@ -90,12 +90,25 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
         {
             await _dbsettings.Reload();
 
-            await _log.WriteInfoAsync(nameof(AzureLogHandler), nameof(FindTables), $"Begin find log tables, count accounts: {_dbsettings.CurrentValue.ScanLogsConnString.Length}");
-
-            foreach (var connString in _dbsettings.CurrentValue.ScanLogsConnString)
+            var accounts = new Dictionary<string, (CloudStorageAccount Account, string ConnString, LoggingType LoggingType)>();
+            _dbsettings.CurrentValue.ScanLogsConnString.ToList().ForEach(c =>
             {
-                CloudStorageAccount account = CloudStorageAccount.Parse(connString);
-                var accountName = account.Credentials.AccountName;
+                CloudStorageAccount account = CloudStorageAccount.Parse(c);
+                accounts[account.Credentials.AccountName] = (account, c, LoggingType.Default);
+            });
+            _dbsettings.CurrentValue.ScanSensitiveLogsConnString.ToList().ForEach(c => {
+                CloudStorageAccount account = CloudStorageAccount.Parse(c);
+                accounts[account.Credentials.AccountName] = (account, c, LoggingType.Sensitive);
+            });
+
+            await _log.WriteInfoAsync(nameof(AzureLogHandler), nameof(FindTables), $"Begin find log tables, count accounts: {accounts.Count}");
+
+            foreach (var a in accounts)
+            {
+                var accountName = a.Key;
+                var account = a.Value.Account;
+                var connString = a.Value.ConnString;
+                var loggingType = a.Value.LoggingType;
 
                 try
                 {
@@ -120,7 +133,7 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
                             var row = (await table.ExecuteQuerySegmentedAsync(operationGet, null)).FirstOrDefault();
                             if (row != null && row.DateTime != DateTime.MinValue && row.Level != null && row.Msg != null)
                             {
-                                if (_tables.All(e => e.Name != name || e.ConnString != connString))
+                                if (_tables.All(e => e.Name != name || e.Account != accountName))
                                 {
                                     var info = new TableInfo
                                     {
@@ -129,7 +142,8 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
                                         LastRowKey = DateTime.UtcNow.ToString("HH:mm:ss.fffffff"),
                                         Name = name,
                                         Account = accountName,
-                                        ConnString = connString
+                                        ConnString = connString,
+                                        LoggingType = loggingType,
                                     };
                                     _tables.Add(info);
                                     countAdd++;
@@ -274,11 +288,11 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
                         Level = logEntity.Level,
                         Version = logEntity.Version,
                         Component = logEntity.Component,
-                        Process = logEntity.Process,
-                        Context = logEntity.Context,
+                        Process = table.LoggingType == LoggingType.Sensitive ? null : logEntity.Process,
+                        Context = table.LoggingType == LoggingType.Sensitive ? null : logEntity.Context,
                         Type = logEntity.Type,
                         Stack = logEntity.Stack,
-                        Msg = logEntity.Msg,
+                        Msg = table.LoggingType == LoggingType.Sensitive ? null : logEntity.Msg,
                         Table = table.Name,
                         AccountName = table.Account
                     };

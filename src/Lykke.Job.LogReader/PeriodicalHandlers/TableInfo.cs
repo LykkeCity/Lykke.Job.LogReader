@@ -12,5 +12,12 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
         public string Name { get; set; }
         public string Account { get; set; }
         public string ConnString { get; set; }
+        public LoggingType LoggingType { get; set; }
+    }
+
+    public enum LoggingType
+    {
+        Default = 0,
+        Sensitive = 1
     }
 }
