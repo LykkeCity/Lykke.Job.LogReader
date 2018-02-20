@@ -88,31 +88,27 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
             return count;
         }
 
+        private void AddAccountsByConnString(string[] connStrings, LoggingType loggingType, Dictionary<string, AccountSettings> accounts)
+        {
+            foreach (var connString in connStrings)
+            {
+                CloudStorageAccount account = CloudStorageAccount.Parse(connString);
+                accounts[account.Credentials.AccountName] = new AccountSettings
+                {
+                    Account = account,
+                    ConnString = connString,
+                    LoggingType = loggingType
+                };
+            }
+        }
+
         private async Task FindTables()
         {
             await this.dbsettings.Reload().ConfigureAwait(false);
 
             var accounts = new Dictionary<string, AccountSettings>();
-            this.dbsettings.CurrentValue.ScanLogsConnString.ToList().ForEach(c =>
-            {
-                CloudStorageAccount account = CloudStorageAccount.Parse(c);
-                accounts[account.Credentials.AccountName] = new AccountSettings
-                {
-                    Account = account,
-                    ConnString = c,
-                    LoggingType = LoggingType.Default
-                };
-            });
-            this.dbsettings.CurrentValue.ScanSensitiveLogsConnString.ToList().ForEach(c =>
-            {
-                CloudStorageAccount account = CloudStorageAccount.Parse(c);
-                accounts[account.Credentials.AccountName] = new AccountSettings
-                {
-                    Account = account,
-                    ConnString = c,
-                    LoggingType = LoggingType.Sensitive
-                };
-            });
+            this.AddAccountsByConnString(this.dbsettings.CurrentValue.ScanLogsConnString, LoggingType.Default, accounts);
+            this.AddAccountsByConnString(this.dbsettings.CurrentValue.ScanSensitiveLogsConnString, LoggingType.Sensitive, accounts);
 
             await this.log.WriteInfoAsync(nameof(AzureLogHandler), nameof(this.FindTables), $"Begin find log tables, count accounts: {accounts.Count}").ConfigureAwait(false);
 
