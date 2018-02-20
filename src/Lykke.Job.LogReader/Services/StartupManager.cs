@@ -12,11 +12,11 @@ namespace Lykke.Job.LogReader.Services
     // which you want to startup explicitly.
     public class StartupManager : IStartupManager
     {
-        private readonly ILog log;
+        private readonly ILog _log;
 
         public StartupManager(ILog log)
         {
-            this.log = log;
+            this._log = log;
         }
 
         public async Task StartAsync()

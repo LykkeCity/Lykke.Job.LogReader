@@ -12,20 +12,20 @@ namespace Lykke.Job.LogReader.Modules
 {
     public class JobModule : Module
     {
-        private readonly LogReaderSettings settings;
-        private readonly IReloadingManager<DbSettings> dbSettingsManager;
-        private readonly ILog log;
+        private readonly LogReaderSettings _settings;
+        private readonly IReloadingManager<DbSettings> _dbSettingsManager;
+        private readonly ILog _log;
 
         // NOTE: you can remove it if you don't need to use IServiceCollection extensions to register service specific dependencies
-        private readonly IServiceCollection services;
+        private readonly IServiceCollection _services;
 
         public JobModule(LogReaderSettings settings, IReloadingManager<DbSettings> dbSettingsManager, ILog log)
         {
-            this.settings = settings;
-            this.log = log;
-            this.dbSettingsManager = dbSettingsManager;
+            this._settings = settings;
+            this._log = log;
+            this._dbSettingsManager = dbSettingsManager;
 
-            this.services = new ServiceCollection();
+            this._services = new ServiceCollection();
         }
 
         protected override void Load(ContainerBuilder builder)
@@ -35,7 +35,7 @@ namespace Lykke.Job.LogReader.Modules
             // builder.RegisterType<QuotesPublisher>()
             //  .As<IQuotesPublisher>()
             //  .WithParameter(TypedParameter.From(_settings.Rabbit.ConnectionString))
-            builder.RegisterInstance(this.log)
+            builder.RegisterInstance(this._log)
                 .As<ILog>()
                 .SingleInstance();
 
@@ -49,15 +49,15 @@ namespace Lykke.Job.LogReader.Modules
             builder.RegisterType<ShutdownManager>()
                 .As<IShutdownManager>();
 
-            builder.RegisterInstance(new AzureLogHandler(this.log, this.settings.Reader, this.dbSettingsManager))
+            builder.RegisterInstance(new AzureLogHandler(this._log, this._settings.Reader, this._dbSettingsManager))
                 .As<IStartable>()
                 .AutoActivate()
                 .SingleInstance();
 
-            builder.RegisterInstance(this.settings.Reader);
-            builder.RegisterInstance(this.settings.Db);
+            builder.RegisterInstance(this._settings.Reader);
+            builder.RegisterInstance(this._settings.Db);
 
-            builder.Populate(this.services);
+            builder.Populate(this._services);
         }
     }
 }

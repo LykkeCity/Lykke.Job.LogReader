@@ -23,17 +23,17 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
 {
     public class FakeReloadingManager : IReloadingManager<string>
     {
-        private readonly string value;
+        private readonly string _value;
 
         public FakeReloadingManager(string value)
         {
-            this.value = value;
+            this._value = value;
         }
 
         public bool HasLoaded => true;
 
-        public string CurrentValue => this.value;
+        public string CurrentValue => this._value;
 
-        public Task<string> Reload() => Task.FromResult(this.value);
+        public Task<string> Reload() => Task.FromResult(this._value);
     }
 }

@@ -10,11 +10,11 @@ namespace Lykke.Job.LogReader.Services
     // all periodical handler was stopped, and so on.
     public class ShutdownManager : IShutdownManager
     {
-        private readonly ILog log;
+        private readonly ILog _log;
 
         public ShutdownManager(ILog log)
         {
-            this.log = log;
+            this._log = log;
         }
 
         public async Task StopAsync()

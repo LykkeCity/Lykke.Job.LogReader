@@ -5,23 +5,23 @@ namespace Lykke.Job.LogReader.Core.Domain.Health
 {
     public class HealthIssuesCollection : IReadOnlyCollection<HealthIssue>
     {
-        private readonly List<HealthIssue> list;
+        private readonly List<HealthIssue> _list;
 
         public HealthIssuesCollection()
         {
-            this.list = new List<HealthIssue>();
+            this._list = new List<HealthIssue>();
         }
 
-        public int Count => this.list.Count;
+        public int Count => this._list.Count;
 
         public void Add(string type, string value)
         {
-            this.list.Add(HealthIssue.Create(type, value));
+            this._list.Add(HealthIssue.Create(type, value));
         }
 
         public IEnumerator<HealthIssue> GetEnumerator()
         {
-            return this.list.GetEnumerator();
+            return this._list.GetEnumerator();
         }
 
         IEnumerator IEnumerable.GetEnumerator()
