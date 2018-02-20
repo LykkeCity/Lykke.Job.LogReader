@@ -4,25 +4,23 @@ using Lykke.Job.LogReader.Core.Services;
 
 namespace Lykke.Job.LogReader.Services
 {
-    // NOTE: Sometimes, shutdown process should be expressed explicitly. 
+    // NOTE: Sometimes, shutdown process should be expressed explicitly.
     // If this is your case, use this class to manage shutdown.
-    // For example, sometimes some state should be saved only after all incoming message processing and 
+    // For example, sometimes some state should be saved only after all incoming message processing and
     // all periodical handler was stopped, and so on.
-    
     public class ShutdownManager : IShutdownManager
     {
-        private readonly ILog _log;
+        private readonly ILog log;
 
         public ShutdownManager(ILog log)
         {
-            _log = log;
+            this.log = log;
         }
 
         public async Task StopAsync()
         {
             // TODO: Implement your shutdown logic here. Good idea is to log every step
-
-            await Task.CompletedTask;
+            await Task.CompletedTask.ConfigureAwait(false);
         }
     }
 }

@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Hosting;
 
 namespace Lykke.Job.LogReader
 {
-    internal sealed class Program
+    public sealed class Program
     {
         public static string EnvInfo => Environment.GetEnvironmentVariable("ENV_INFO");
 
@@ -29,7 +29,7 @@ namespace Lykke.Job.LogReader
                     .UseApplicationInsights()
                     .Build();
 
-                await webHost.RunAsync();
+                await webHost.RunAsync().ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -47,7 +47,7 @@ namespace Lykke.Job.LogReader
                             Task.Run(() =>
                             {
                                 Console.ReadKey(true);
-                            }));
+                            })).ConfigureAwait(false);
             }
 
             Console.WriteLine("Terminated");

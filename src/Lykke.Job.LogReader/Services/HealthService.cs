@@ -8,7 +8,6 @@ namespace Lykke.Job.LogReader.Services
     public class HealthService : IHealthService
     {
         // TODO: Feel free to add properties, which contains your helath metrics, and use it in monitoring layer or in IsAlive API endpoint
-
         public string GetHealthViolationMessage()
         {
             // TODO: Check gathered health statistics, and return appropriate health violation message, or NULL if job hasn't critical errors
@@ -20,7 +19,6 @@ namespace Lykke.Job.LogReader.Services
             var issues = new HealthIssuesCollection();
 
             // TODO: Check gathered health statistics, and add appropriate health issues message to issues
-
             return issues;
         }
 

@@ -7,6 +7,7 @@ namespace Lykke.Job.LogReader.Core.Services
     public interface IHealthService
     {
         string GetHealthViolationMessage();
+
         IEnumerable<HealthIssue> GetHealthIssues();
 
         // TODO: Place health tracing methods declarations here

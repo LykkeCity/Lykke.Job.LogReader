@@ -4,27 +4,25 @@ using Lykke.Job.LogReader.Core.Services;
 
 namespace Lykke.Job.LogReader.Services
 {
-    // NOTE: Sometimes, startup process which is expressed explicitly is not just better, 
+    // NOTE: Sometimes, startup process which is expressed explicitly is not just better,
     // but the only way. If this is your case, use this class to manage startup.
-    // For example, sometimes some state should be restored before any periodical handler will be started, 
+    // For example, sometimes some state should be restored before any periodical handler will be started,
     // or any incoming message will be processed and so on.
-    // Do not forget to remove As<IStartable>() and AutoActivate() from DI registartions of services, 
+    // Do not forget to remove As<IStartable>() and AutoActivate() from DI registartions of services,
     // which you want to startup explicitly.
-
     public class StartupManager : IStartupManager
     {
-        private readonly ILog _log;
+        private readonly ILog log;
 
         public StartupManager(ILog log)
         {
-            _log = log;
+            this.log = log;
         }
 
         public async Task StartAsync()
         {
             // TODO: Implement your startup logic here. Good idea is to log every step
-
-            await Task.CompletedTask;
+            await Task.CompletedTask.ConfigureAwait(false);
         }
     }
 }

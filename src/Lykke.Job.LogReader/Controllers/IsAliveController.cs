@@ -11,11 +11,11 @@ namespace Lykke.Job.LogReader.Controllers
     [Route("api/[controller]")]
     public class IsAliveController : Controller
     {
-        private readonly IHealthService _healthService;
+        private readonly IHealthService healthService;
 
         public IsAliveController(IHealthService healthService)
         {
-            _healthService = healthService;
+            this.healthService = healthService;
         }
 
         /// <summary>
@@ -28,17 +28,14 @@ namespace Lykke.Job.LogReader.Controllers
         [ProducesResponseType(typeof(ErrorResponse), (int)HttpStatusCode.InternalServerError)]
         public IActionResult Get()
         {
-            var healthViloationMessage = _healthService.GetHealthViolationMessage();
+            var healthViloationMessage = this.healthService.GetHealthViolationMessage();
             if (healthViloationMessage != null)
             {
-                return StatusCode((int)HttpStatusCode.InternalServerError, new ErrorResponse
-                {
-                    ErrorMessage = $"Job is unhealthy: {healthViloationMessage}"
-                });
+                return this.StatusCode((int)HttpStatusCode.InternalServerError, new ErrorResponse { ErrorMessage = $"Job is unhealthy: {healthViloationMessage}" });
             }
 
             // NOTE: Feel free to extend IsAliveResponse, to display job-specific indicators
-            return Ok(new IsAliveResponse
+            return this.Ok(new IsAliveResponse
             {
                 Name = Microsoft.Extensions.PlatformAbstractions.PlatformServices.Default.Application.ApplicationName,
                 Version = Microsoft.Extensions.PlatformAbstractions.PlatformServices.Default.Application.ApplicationVersion,
@@ -48,7 +45,7 @@ namespace Lykke.Job.LogReader.Controllers
 #else
                 IsDebug = false,
 #endif
-                IssueIndicators = _healthService.GetHealthIssues()
+                IssueIndicators = this.healthService.GetHealthIssues()
                     .Select(i => new IsAliveResponse.IssueIndicator
                     {
                         Type = i.Type,

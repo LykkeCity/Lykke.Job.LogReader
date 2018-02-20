@@ -1,13 +1,18 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 15
-VisualStudioVersion = 15.0.27004.2010
+VisualStudioVersion = 15.0.27130.2027
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Lykke.Job.LogReader", "src\Lykke.Job.LogReader\Lykke.Job.LogReader.csproj", "{5566FD3E-0DB6-4BF3-A98D-4A1181B3E02C}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Lykke.Job.LogReader.Tests", "tests\Lykke.Job.LogReader.Tests\Lykke.Job.LogReader.Tests.csproj", "{3AC48AE7-2D02-4984-9ECE-6BDE803D88E2}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "test", "test", "{437BA8DA-D9B6-496F-81C9-004CD5992ECE}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{C3A70133-ADC5-4F43-8ABA-61B6ABEAC90B}"
+	ProjectSection(SolutionItems) = preProject
+		lykke.ruleset = lykke.ruleset
+	EndProjectSection
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

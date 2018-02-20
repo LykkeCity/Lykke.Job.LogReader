@@ -22,20 +22,23 @@ namespace Lykke.Job.LogReader
 {
     public class Startup
     {
-        public IHostingEnvironment Environment { get; }
-        public IContainer ApplicationContainer { get; private set; }
-        public IConfigurationRoot Configuration { get; }
-        public ILog Log { get; private set; }
-
         public Startup(IHostingEnvironment env)
         {
             var builder = new ConfigurationBuilder()
                 .SetBasePath(env.ContentRootPath)
                 .AddEnvironmentVariables();
 
-            Configuration = builder.Build();
-            Environment = env;
+            this.Configuration = builder.Build();
+            this.Environment = env;
         }
+
+        public IHostingEnvironment Environment { get; }
+
+        public IContainer ApplicationContainer { get; private set; }
+
+        public IConfigurationRoot Configuration { get; }
+
+        public ILog Log { get; private set; }
 
         public IServiceProvider ConfigureServices(IServiceCollection services)
         {
@@ -54,21 +57,21 @@ namespace Lykke.Job.LogReader
                 });
 
                 var builder = new ContainerBuilder();
-                var appSettings = Configuration.LoadSettings<AppSettings>();
+                var appSettings = this.Configuration.LoadSettings<AppSettings>();
 
-                Log = CreateLogWithSlack(services, appSettings);
+                this.Log = CreateLogWithSlack(appSettings);
 
-                builder.RegisterModule(new JobModule(appSettings.CurrentValue.LogReaderJob, appSettings.Nested(x => x.LogReaderJob.Db), Log));
+                builder.RegisterModule(new JobModule(appSettings.CurrentValue.LogReaderJob, appSettings.Nested(x => x.LogReaderJob.Db), this.Log));
 
                 builder.Populate(services);
 
-                ApplicationContainer = builder.Build();
+                this.ApplicationContainer = builder.Build();
 
-                return new AutofacServiceProvider(ApplicationContainer);
+                return new AutofacServiceProvider(this.ApplicationContainer);
             }
             catch (Exception ex)
             {
-                Log?.WriteFatalErrorAsync(nameof(Startup), nameof(ConfigureServices), "", ex).GetAwaiter().GetResult();
+                this.Log?.WriteFatalErrorAsync(nameof(Startup), nameof(this.ConfigureServices), string.Empty, ex).GetAwaiter().GetResult();
                 throw;
             }
         }
@@ -82,7 +85,7 @@ namespace Lykke.Job.LogReader
                     app.UseDeveloperExceptionPage();
                 }
 
-                app.UseLykkeMiddleware("LogReader", ex => new ErrorResponse {ErrorMessage = "Technical problem"});
+                app.UseLykkeMiddleware("LogReader", ex => new ErrorResponse { ErrorMessage = "Technical problem" });
 
                 app.UseMvc();
                 app.UseSwagger(c =>
@@ -96,76 +99,18 @@ namespace Lykke.Job.LogReader
                 });
                 app.UseStaticFiles();
 
-                appLifetime.ApplicationStarted.Register(() => StartApplication().GetAwaiter().GetResult());
-                appLifetime.ApplicationStopping.Register(() => StopApplication().GetAwaiter().GetResult());
-                appLifetime.ApplicationStopped.Register(() => CleanUp().GetAwaiter().GetResult());
+                appLifetime.ApplicationStarted.Register(() => this.StartApplication().GetAwaiter().GetResult());
+                appLifetime.ApplicationStopping.Register(() => this.StopApplication().GetAwaiter().GetResult());
+                appLifetime.ApplicationStopped.Register(() => this.CleanUp().GetAwaiter().GetResult());
             }
             catch (Exception ex)
             {
-                Log?.WriteFatalErrorAsync(nameof(Startup), nameof(Configure), "", ex).GetAwaiter().GetResult();
+                this.Log?.WriteFatalErrorAsync(nameof(Startup), nameof(this.Configure), string.Empty, ex).GetAwaiter().GetResult();
                 throw;
             }
         }
 
-        private async Task StartApplication()
-        {
-            try
-            {
-                // NOTE: Job not yet recieve and process IsAlive requests here
-
-                await ApplicationContainer.Resolve<IStartupManager>().StartAsync();
-                await Log.WriteMonitorAsync("", Program.EnvInfo, "Started");
-            }
-            catch (Exception ex)
-            {
-                await Log.WriteFatalErrorAsync(nameof(Startup), nameof(StartApplication), "", ex);
-                throw;
-            }
-        }
-
-        private async Task StopApplication()
-        {
-            try
-            {
-                // NOTE: Job still can recieve and process IsAlive requests here, so take care about it if you add logic here.
-
-                await ApplicationContainer.Resolve<IShutdownManager>().StopAsync();
-            }
-            catch (Exception ex)
-            {
-                if (Log != null)
-                {
-                    await Log.WriteFatalErrorAsync(nameof(Startup), nameof(StopApplication), "", ex);
-                }
-                throw;
-            }
-        }
-
-        private async Task CleanUp()
-        {
-            try
-            {
-                // NOTE: Job can't recieve and process IsAlive requests here, so you can destroy all resources
-                
-                if (Log != null)
-                {
-                    await Log.WriteMonitorAsync("", Program.EnvInfo, "Terminating");
-                }
-                
-                ApplicationContainer.Dispose();
-            }
-            catch (Exception ex)
-            {
-                if (Log != null)
-                {
-                    await Log.WriteFatalErrorAsync(nameof(Startup), nameof(CleanUp), "", ex);
-                    (Log as IDisposable)?.Dispose();
-                }
-                throw;
-            }
-        }
-
-        private static ILog CreateLogWithSlack(IServiceCollection services, IReloadingManager<AppSettings> settings)
+        private static ILog CreateLogWithSlack(IReloadingManager<AppSettings> settings)
         {
             var consoleLogger = new LogToConsole();
             var aggregateLogger = new AggregateLogger();
@@ -181,14 +126,14 @@ namespace Lykke.Job.LogReader
                 return aggregateLogger;
             }
 
-            if (dbLogConnectionString.StartsWith("${") && dbLogConnectionString.EndsWith("}"))
+            if (dbLogConnectionString.StartsWith("${", StringComparison.InvariantCultureIgnoreCase) && dbLogConnectionString.EndsWith("}", StringComparison.InvariantCultureIgnoreCase))
+            {
                 throw new InvalidOperationException($"LogsConnString {dbLogConnectionString} is not filled in settings");
+            }
 
             var persistenceManager = new LykkeLogToAzureStoragePersistenceManager(
                 AzureTableStorage<LogEntity>.Create(dbLogConnectionStringManager, "LogReaderLog", consoleLogger),
                 consoleLogger);
-            
-            
 
             // Creating azure storage logger, which logs own messages to concole log
             var azureStorageLogger = new LykkeLogToAzureStorage(
@@ -201,6 +146,63 @@ namespace Lykke.Job.LogReader
             aggregateLogger.AddLog(azureStorageLogger);
 
             return aggregateLogger;
+        }
+
+        private async Task StartApplication()
+        {
+            try
+            {
+                // NOTE: Job not yet recieve and process IsAlive requests here
+                await this.ApplicationContainer.Resolve<IStartupManager>().StartAsync().ConfigureAwait(false);
+                await this.Log.WriteMonitorAsync(string.Empty, Program.EnvInfo, "Started").ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                await this.Log.WriteFatalErrorAsync(nameof(Startup), nameof(this.StartApplication), string.Empty, ex).ConfigureAwait(false);
+                throw;
+            }
+        }
+
+        private async Task StopApplication()
+        {
+            try
+            {
+                // NOTE: Job still can recieve and process IsAlive requests here, so take care about it if you add logic here.
+                await this.ApplicationContainer.Resolve<IShutdownManager>().StopAsync().ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                if (this.Log != null)
+                {
+                    await this.Log.WriteFatalErrorAsync(nameof(Startup), nameof(this.StopApplication), string.Empty, ex).ConfigureAwait(false);
+                }
+
+                throw;
+            }
+        }
+
+        private async Task CleanUp()
+        {
+            try
+            {
+                // NOTE: Job can't recieve and process IsAlive requests here, so you can destroy all resources
+                if (this.Log != null)
+                {
+                    await this.Log.WriteMonitorAsync(string.Empty, Program.EnvInfo, "Terminating").ConfigureAwait(false);
+                }
+
+                this.ApplicationContainer.Dispose();
+            }
+            catch (Exception ex)
+            {
+                if (this.Log != null)
+                {
+                    await this.Log.WriteFatalErrorAsync(nameof(Startup), nameof(this.CleanUp), string.Empty, ex).ConfigureAwait(false);
+                    (this.Log as IDisposable)?.Dispose();
+                }
+
+                throw;
+            }
         }
     }
 }

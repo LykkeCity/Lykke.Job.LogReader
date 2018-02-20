@@ -3,28 +3,29 @@ using Autofac.Extensions.DependencyInjection;
 using Common.Log;
 using Lykke.Job.LogReader.Core.Services;
 using Lykke.Job.LogReader.Core.Settings.JobSettings;
+using Lykke.Job.LogReader.PeriodicalHandlers;
 using Lykke.Job.LogReader.Services;
 using Lykke.SettingsReader;
-using Lykke.Job.LogReader.PeriodicalHandlers;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Lykke.Job.LogReader.Modules
 {
     public class JobModule : Module
     {
-        private readonly LogReaderSettings _settings;
-        private readonly IReloadingManager<DbSettings> _dbSettingsManager;
-        private readonly ILog _log;
+        private readonly LogReaderSettings settings;
+        private readonly IReloadingManager<DbSettings> dbSettingsManager;
+        private readonly ILog log;
+
         // NOTE: you can remove it if you don't need to use IServiceCollection extensions to register service specific dependencies
-        private readonly IServiceCollection _services;
+        private readonly IServiceCollection services;
 
         public JobModule(LogReaderSettings settings, IReloadingManager<DbSettings> dbSettingsManager, ILog log)
         {
-            _settings = settings;
-            _log = log;
-            _dbSettingsManager = dbSettingsManager;
+            this.settings = settings;
+            this.log = log;
+            this.dbSettingsManager = dbSettingsManager;
 
-            _services = new ServiceCollection();
+            this.services = new ServiceCollection();
         }
 
         protected override void Load(ContainerBuilder builder)
@@ -34,8 +35,7 @@ namespace Lykke.Job.LogReader.Modules
             // builder.RegisterType<QuotesPublisher>()
             //  .As<IQuotesPublisher>()
             //  .WithParameter(TypedParameter.From(_settings.Rabbit.ConnectionString))
-
-            builder.RegisterInstance(_log)
+            builder.RegisterInstance(this.log)
                 .As<ILog>()
                 .SingleInstance();
 
@@ -49,16 +49,15 @@ namespace Lykke.Job.LogReader.Modules
             builder.RegisterType<ShutdownManager>()
                 .As<IShutdownManager>();
 
-            builder.RegisterInstance(new AzureLogHandler(_log, _settings.Reader, _dbSettingsManager))
+            builder.RegisterInstance(new AzureLogHandler(this.log, this.settings.Reader, this.dbSettingsManager))
                 .As<IStartable>()
                 .AutoActivate()
                 .SingleInstance();
-            
-            builder.RegisterInstance(_settings.Reader);
-            builder.RegisterInstance(_settings.Db);
 
-            builder.Populate(_services);
+            builder.RegisterInstance(this.settings.Reader);
+            builder.RegisterInstance(this.settings.Db);
+
+            builder.Populate(this.services);
         }
-
     }
 }
