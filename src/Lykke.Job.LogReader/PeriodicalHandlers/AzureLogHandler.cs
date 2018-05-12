@@ -285,7 +285,8 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
                         Stack = logEntity.Stack,
                         Msg = logEntity.Msg,
                         Table = table.Name,
-                        AccountName = table.Account
+                        AccountName = table.Account,
+                        Env = logEntity.Env
                     };
                     PreparingContext(dto);
 
