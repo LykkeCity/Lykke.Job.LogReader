@@ -16,5 +16,6 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
         public string Table { get; set; }
         public string AccountName { get; set; }
         public object ContextData { get; set; }
+        public string Env { get; set; }
     }
 }
