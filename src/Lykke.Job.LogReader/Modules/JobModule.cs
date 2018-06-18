@@ -51,6 +51,7 @@ namespace Lykke.Job.LogReader.Modules
 
             builder.RegisterInstance(new AzureLogHandler(_log, _settings.Reader, _dbSettingsManager))
                 .As<IStartable>()
+                .AsSelf()
                 .AutoActivate()
                 .SingleInstance();
             

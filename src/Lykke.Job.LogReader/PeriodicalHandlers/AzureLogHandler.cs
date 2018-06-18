@@ -42,6 +42,11 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
             _dbsettings = dbsettings;
         }
 
+        public IReadOnlyList<TableInfo> GetTableInfo()
+        {
+            return _tables.ToList();
+        }
+
         public override async Task Execute()
         {
             if (_tables == null)
@@ -300,6 +305,63 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
                     _lock.Release();
                 }
             }
+        }
+
+        public async Task<string> LoadData(string account, string table, string partitionKey, TimeSpan fromTime, TimeSpan toTime)
+        {
+            var item = _tables.FirstOrDefault(e => e.Account == account && e.Name == table);
+            if (item == null)
+                return "not found table";
+
+            var count = 0;
+
+            var time = fromTime;
+            while (time <= toTime)
+            {
+                var totome = fromTime.Add(TimeSpan.FromSeconds(10));
+                var filter = TableQuery.CombineFilters(
+                    TableQuery.GenerateFilterCondition("PartitionKey", QueryComparisons.Equal, partitionKey),
+                    TableOperators.And,
+                    TableQuery.CombineFilters(
+                        TableQuery.GenerateFilterCondition("RowKey", QueryComparisons.GreaterThan, fromTime.ToString("HH:mm:ss.fffffff")),
+                        TableOperators.And,
+                        TableQuery.GenerateFilterCondition("RowKey", QueryComparisons.LessThanOrEqual, totome.ToString("HH:mm:ss.fffffff"))
+                    )
+                );
+                var query = new TableQuery<LogEntity>().Where(filter);
+
+                IEnumerable<LogEntity> data;
+                try
+                {
+                    data = await item.Entity.WhereAsync(query);
+                }
+                catch (Exception e)
+                {
+                    await _log.WriteInfoAsync(nameof(AzureLogHandler), nameof(CheckEvents), e.ToString());
+                    return $"count: {count}, error on get: {e}";
+                }
+
+                if (data != null)
+                {
+                    try
+                    {
+                        foreach (var logEntity in data.OrderBy(e => e.Timestamp))
+                        {
+                            await SendData(item, logEntity);
+                            count++;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        await _log.WriteInfoAsync(nameof(AzureLogHandler), nameof(CheckEvents), ex.ToString());
+                        return $"count: {count}, erroron send: {ex}";
+                    }
+                }
+
+                time = totome;
+            }
+
+            return $"count: {count}";
         }
     }
 
