@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Lykke.Job.LogReader.PeriodicalHandlers;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Swashbuckle.AspNetCore.SwaggerGen;
 
 namespace Lykke.Job.LogReader.Controllers
 {
@@ -18,6 +19,8 @@ namespace Lykke.Job.LogReader.Controllers
             _handler = handler;
         }
 
+        [HttpGet]
+        [SwaggerOperation("GetInfo")]
         public List<AccountInfoReport> GetInfo()
         {
             var data = _handler.GetTableInfo();
@@ -31,7 +34,9 @@ namespace Lykke.Job.LogReader.Controllers
             return responce;
         }
 
-        public async Task<string> LoadData(string account, string table, string partitionKey, TimeSpan fromTime, TimeSpan toTime)
+        [HttpPost]
+        [SwaggerOperation("LoadData")]
+        public async Task<string> LoadData(string account, string table, string partitionKey, DateTime fromTime, DateTime toTime)
         {
             var result = await _handler.LoadData(account, table, partitionKey, fromTime, toTime);
 

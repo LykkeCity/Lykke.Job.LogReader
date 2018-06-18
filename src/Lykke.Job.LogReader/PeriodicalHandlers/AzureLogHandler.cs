@@ -256,7 +256,7 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
 
         private readonly SemaphoreSlim _lock = new SemaphoreSlim(1, 1);
 
-        private async Task SendData(TableInfo table, LogEntity logEntity)
+        private async Task SendData(TableInfo table, LogEntity logEntity, bool stopIferror = false)
         {
             while (true)
             {
@@ -297,17 +297,21 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
                 catch (Exception ex)
                 {
                     await _log.WriteInfoAsync(nameof(AzureLogHandler), nameof(SendData), $"{_settings.LogStash.Host}:_settings.LogStash.Port", ex.ToString());
-                    await Task.Delay(2000);
                     _isConnect = false;
+                    if (stopIferror)
+                        return;
                 }
                 finally
                 {
                     _lock.Release();
                 }
+
+                if (!_isConnect)
+                    await Task.Delay(2000);
             }
         }
 
-        public async Task<string> LoadData(string account, string table, string partitionKey, TimeSpan fromTime, TimeSpan toTime)
+        public async Task<string> LoadData(string account, string table, string partitionKey, DateTime fromTime, DateTime toTime)
         {
             var item = _tables.FirstOrDefault(e => e.Account == account && e.Name == table);
             if (item == null)
@@ -318,7 +322,7 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
             var time = fromTime;
             while (time <= toTime)
             {
-                var totome = fromTime.Add(TimeSpan.FromSeconds(10));
+                var totome = fromTime.AddSeconds(10);
                 var filter = TableQuery.CombineFilters(
                     TableQuery.GenerateFilterCondition("PartitionKey", QueryComparisons.Equal, partitionKey),
                     TableOperators.And,
