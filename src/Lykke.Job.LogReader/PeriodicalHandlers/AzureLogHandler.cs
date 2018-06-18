@@ -337,7 +337,7 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
                 IEnumerable<LogEntity> data;
                 try
                 {
-                    data = await item.Entity.WhereAsync(query);
+                    data = (await item.Entity.WhereAsync(query)).ToList();
                 }
                 catch (Exception e)
                 {
@@ -345,19 +345,21 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
                     return $"count: {count}, error on get: {e}";
                 }
 
-                if (data != null)
+                if (data.Any())
                 {
                     try
                     {
+                        Console.WriteLine($"Try send {data.Count()}");
                         foreach (var logEntity in data.OrderBy(e => e.Timestamp))
                         {
-                            await SendData(item, logEntity);
+                            await SendData(item, logEntity, true);
                             count++;
                         }
                     }
                     catch (Exception ex)
                     {
                         await _log.WriteInfoAsync(nameof(AzureLogHandler), nameof(CheckEvents), ex.ToString());
+                        Console.WriteLine($"Error on send {count}");
                         return $"count: {count}, erroron send: {ex}";
                     }
                 }
