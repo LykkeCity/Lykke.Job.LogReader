@@ -322,7 +322,7 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
             var time = fromTime;
             while (time <= toTime)
             {
-                var totome = fromTime.AddSeconds(10);
+                var totome = time.AddSeconds(10);
                 var filter = TableQuery.CombineFilters(
                     TableQuery.GenerateFilterCondition("PartitionKey", QueryComparisons.Equal, partitionKey),
                     TableOperators.And,
