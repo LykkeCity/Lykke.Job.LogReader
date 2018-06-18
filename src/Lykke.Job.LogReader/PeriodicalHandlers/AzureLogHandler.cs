@@ -341,7 +341,7 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
                 }
                 catch (Exception e)
                 {
-                    await _log.WriteInfoAsync(nameof(AzureLogHandler), nameof(CheckEvents), e.ToString());
+                    await _log.WriteInfoAsync(nameof(AzureLogHandler), nameof(LoadData), e.ToString());
                     return $"count: {count}, error on get: {e}";
                 }
 
@@ -349,6 +349,7 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
                 {
                     try
                     {
+                        await _log.WriteInfoAsync(nameof(AzureLogHandler), nameof(LoadData), data.Count().ToString(), "Try send ====");
                         Console.WriteLine($"Try send {data.Count()}");
                         foreach (var logEntity in data.OrderBy(e => e.Timestamp))
                         {
@@ -359,12 +360,12 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
                     catch (Exception ex)
                     {
                         await _log.WriteInfoAsync(nameof(AzureLogHandler), nameof(CheckEvents), ex.ToString());
-                        Console.WriteLine($"Error on send {count}");
                         return $"count: {count}, erroron send: {ex}";
                     }
                 }
 
                 time = totome;
+                await _log.WriteInfoAsync(nameof(AzureLogHandler), nameof(LoadData), data.Count().ToString(), $"send {count}, time {totome:HH:mm:ss.fffffff} =====");
             }
 
             return $"count: {count}";
