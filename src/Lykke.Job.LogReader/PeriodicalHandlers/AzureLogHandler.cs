@@ -72,28 +72,29 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
         private async Task<int> HandleTableAndWatch(TableInfo table)
         {
             int count = 0;
-            //try
-            //{
-            //    var sw = new Stopwatch();
-            //    sw.Start();
-            //    var countNew = await HandleTable(table);
-            //    sw.Stop();
-            //    if (countNew > 600 || sw.ElapsedMilliseconds > 10000)
-            //    {
-            //        await _log.WriteInfoAsync(nameof(AzureLogHandler), nameof(HandleTableAndWatch), $"table {table.Name} ({table.Account}), count: {countNew}, time: {sw.ElapsedMilliseconds} ms");
-            //    }
-            //    count += countNew;
-            //}
-            //catch (Exception ex)
-            //{
-            //    await _log.WriteErrorAsync(nameof(AzureLogHandler), "handle log table", $"{table.Name} ({table.Account})", ex);
-            //}
+            try
+            {
+                var sw = new Stopwatch();
+                sw.Start();
+                var countNew = await HandleTable(table);
+                sw.Stop();
+                if (countNew > 600 || sw.ElapsedMilliseconds > 10000)
+                {
+                    await _log.WriteInfoAsync(nameof(AzureLogHandler), nameof(HandleTableAndWatch), $"table {table.Name} ({table.Account}), count: {countNew}, time: {sw.ElapsedMilliseconds} ms");
+                }
+                count += countNew;
+            }
+            catch (Exception ex)
+            {
+                await _log.WriteErrorAsync(nameof(AzureLogHandler), "handle log table", $"{table.Name} ({table.Account})", ex);
+            }
             return count;
         }
 
         private async Task FindTables()
         {
             await _dbsettings.Reload();
+
 
             await _log.WriteInfoAsync(nameof(AzureLogHandler), nameof(FindTables), $"Begin find log tables, count accounts: {_dbsettings.CurrentValue.ScanLogsConnString.Length}");
 
@@ -255,6 +256,7 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
         }
 
         private readonly SemaphoreSlim _lock = new SemaphoreSlim(1, 1);
+        private DateTime _lastConnectTime = DateTime.UtcNow;
 
         private async Task SendData(TableInfo table, LogEntity logEntity, bool stopIferror = false)
         {
@@ -271,9 +273,19 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
                         _client = new TcpClient(_settings.LogStash.Host, _settings.LogStash.Port);
                         _writer = new StreamWriter(_client.GetStream());
                         _isConnect = true;
+                        _lastConnectTime = DateTime.UtcNow;
+                        await _log.WriteInfoAsync(nameof(AzureLogHandler), nameof(SendData), "New connection established");
                     }
 
                     await SendDataToSocket(_writer, table, logEntity);
+
+
+                    if ((DateTime.UtcNow - _lastConnectTime).Minutes >= 10)
+                    {
+                        await _log.WriteInfoAsync(nameof(AzureLogHandler), nameof(SendData), "Force close connection (10 min)");
+                        _isConnect = false;
+                    }
+
                     return;
                 }
                 catch (Exception ex)
