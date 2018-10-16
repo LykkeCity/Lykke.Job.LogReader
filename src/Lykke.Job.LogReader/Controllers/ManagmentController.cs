@@ -36,8 +36,13 @@ namespace Lykke.Job.LogReader.Controllers
 
         [HttpPost]
         [SwaggerOperation("LoadData")]
-        public async Task<string> LoadData(string account, string table, string partitionKey, DateTime fromTime, DateTime toTime)
+        public async Task<string> LoadData(string account, string table, DateTime fromTime, DateTime toTime)
         {
+            if (fromTime.Date != toTime.Date)
+                return "Plase use time range in ONE DAY";
+
+            var partitionKey = fromTime.Date.ToString("yyyy-MM-dd");
+
             var result = await _handler.LoadData(account, table, partitionKey, fromTime, toTime);
 
             return result;

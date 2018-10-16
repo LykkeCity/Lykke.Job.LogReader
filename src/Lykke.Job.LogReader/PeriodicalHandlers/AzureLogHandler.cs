@@ -273,26 +273,7 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
                         _isConnect = true;
                     }
 
-                    var dto = new LogDto()
-                    {
-                        DateTime = logEntity.DateTime,
-                        Level = logEntity.Level,
-                        Version = logEntity.Version,
-                        Component = logEntity.Component,
-                        Process = logEntity.Process,
-                        Context = logEntity.Context,
-                        Type = logEntity.Type,
-                        Stack = logEntity.Stack,
-                        Msg = logEntity.Msg,
-                        Table = table.Name,
-                        AccountName = table.Account,
-                        Env = logEntity.Env
-                    };
-                    PreparingContext(dto);
-
-                    var json = dto.ToJson();
-
-                    await _writer.WriteLineAsync(json);
+                    await SendDataToSocket(_writer, table, logEntity);
                     return;
                 }
                 catch (Exception ex)
@@ -312,6 +293,30 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
             }
         }
 
+        private async Task SendDataToSocket(StreamWriter writer, TableInfo table, LogEntity logEntity)
+        {
+            var dto = new LogDto()
+            {
+                DateTime = logEntity.DateTime,
+                Level = logEntity.Level,
+                Version = logEntity.Version,
+                Component = logEntity.Component,
+                Process = logEntity.Process,
+                Context = logEntity.Context,
+                Type = logEntity.Type,
+                Stack = logEntity.Stack,
+                Msg = logEntity.Msg,
+                Table = table.Name,
+                AccountName = table.Account,
+                Env = logEntity.Env
+            };
+            PreparingContext(dto);
+
+            var json = dto.ToJson();
+
+            await writer.WriteLineAsync(json);
+        }
+
         public async Task<string> LoadData(string account, string table, string partitionKey, DateTime fromTime, DateTime toTime)
         {
             var item = _tables.FirstOrDefault(e => e.Account == account && e.Name == table);
@@ -320,56 +325,64 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
 
             var count = 0;
 
-            var time = fromTime;
-            while (time <= toTime)
+            using (var client = new TcpClient(_settings.LogStash.Host, _settings.LogStash.Port))
+            using (var writer = new StreamWriter(client.GetStream()))
             {
-                var totome = time.AddSeconds(10);
-                var filter = TableQuery.CombineFilters(
-                    TableQuery.GenerateFilterCondition("PartitionKey", QueryComparisons.Equal, partitionKey),
-                    TableOperators.And,
-                    TableQuery.CombineFilters(
-                        TableQuery.GenerateFilterCondition("RowKey", QueryComparisons.GreaterThan, fromTime.ToString("HH:mm:ss.fffffff")),
+                var time = fromTime;
+                while (time <= toTime)
+                {
+                    var totome = time.AddSeconds(10);
+                    var filter = TableQuery.CombineFilters(
+                        TableQuery.GenerateFilterCondition("PartitionKey", QueryComparisons.Equal, partitionKey),
                         TableOperators.And,
-                        TableQuery.GenerateFilterCondition("RowKey", QueryComparisons.LessThanOrEqual, totome.ToString("HH:mm:ss.fffffff"))
-                    )
-                );
-                var query = new TableQuery<LogEntity>().Where(filter);
+                        TableQuery.CombineFilters(
+                            TableQuery.GenerateFilterCondition("RowKey", QueryComparisons.GreaterThan,
+                                fromTime.ToString("HH:mm:ss.fffffff")),
+                            TableOperators.And,
+                            TableQuery.GenerateFilterCondition("RowKey", QueryComparisons.LessThanOrEqual,
+                                totome.ToString("HH:mm:ss.fffffff"))
+                        )
+                    );
+                    var query = new TableQuery<LogEntity>().Where(filter);
 
-                IEnumerable<LogEntity> data;
-                try
-                {
-                    data = (await item.Entity.WhereAsync(query)).ToList();
-                }
-                catch (Exception e)
-                {
-                    await _log.WriteInfoAsync(nameof(AzureLogHandler), nameof(LoadData), e.ToString());
-                    return $"count: {count}, error on get: {e}";
-                }
-
-                if (data.Any())
-                {
+                    IEnumerable<LogEntity> data;
                     try
                     {
-                        await _log.WriteInfoAsync(nameof(AzureLogHandler), nameof(LoadData), data.Count().ToString(), "Try send ====");
-                        Console.WriteLine($"Try send {data.Count()}");
-                        foreach (var logEntity in data.OrderBy(e => e.Timestamp))
+                        data = (await item.Entity.WhereAsync(query)).ToList();
+                    }
+                    catch (Exception e)
+                    {
+                        await _log.WriteInfoAsync(nameof(AzureLogHandler), nameof(LoadData), e.ToString());
+                        return $"count: {count}, error on get: {e}";
+                    }
+
+                    if (data.Any())
+                    {
+                        try
                         {
-                            await SendData(item, logEntity, true);
-                            count++;
+                            await _log.WriteInfoAsync(nameof(AzureLogHandler), nameof(LoadData),
+                                data.Count().ToString(), "Try send ====");
+                            Console.WriteLine($"Try send {data.Count()}");
+                            foreach (var logEntity in data.OrderBy(e => e.Timestamp))
+                            {
+                                await SendDataToSocket(writer, item, logEntity);
+                                count++;
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            await _log.WriteInfoAsync(nameof(AzureLogHandler), nameof(CheckEvents), ex.ToString());
+                            return $"count: {count}, erroron send: {ex}";
                         }
                     }
-                    catch (Exception ex)
-                    {
-                        await _log.WriteInfoAsync(nameof(AzureLogHandler), nameof(CheckEvents), ex.ToString());
-                        return $"count: {count}, erroron send: {ex}";
-                    }
+
+                    time = totome;
+                    await _log.WriteInfoAsync(nameof(AzureLogHandler), nameof(LoadData), data.Count().ToString(),
+                        $"send {count}, time {totome:HH:mm:ss.fffffff} =====");
                 }
 
-                time = totome;
-                await _log.WriteInfoAsync(nameof(AzureLogHandler), nameof(LoadData), data.Count().ToString(), $"send {count}, time {totome:HH:mm:ss.fffffff} =====");
+                return $"count: {count}";
             }
-
-            return $"count: {count}";
         }
     }
 
