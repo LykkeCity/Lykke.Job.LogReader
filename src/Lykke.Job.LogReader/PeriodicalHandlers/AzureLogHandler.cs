@@ -72,22 +72,22 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
         private async Task<int> HandleTableAndWatch(TableInfo table)
         {
             int count = 0;
-            try
-            {
-                var sw = new Stopwatch();
-                sw.Start();
-                var countNew = await HandleTable(table);
-                sw.Stop();
-                if (countNew > 600 || sw.ElapsedMilliseconds > 10000)
-                {
-                    await _log.WriteInfoAsync(nameof(AzureLogHandler), nameof(HandleTableAndWatch), $"table {table.Name} ({table.Account}), count: {countNew}, time: {sw.ElapsedMilliseconds} ms");
-                }
-                count += countNew;
-            }
-            catch (Exception ex)
-            {
-                await _log.WriteErrorAsync(nameof(AzureLogHandler), "handle log table", $"{table.Name} ({table.Account})", ex);
-            }
+            //try
+            //{
+            //    var sw = new Stopwatch();
+            //    sw.Start();
+            //    var countNew = await HandleTable(table);
+            //    sw.Stop();
+            //    if (countNew > 600 || sw.ElapsedMilliseconds > 10000)
+            //    {
+            //        await _log.WriteInfoAsync(nameof(AzureLogHandler), nameof(HandleTableAndWatch), $"table {table.Name} ({table.Account}), count: {countNew}, time: {sw.ElapsedMilliseconds} ms");
+            //    }
+            //    count += countNew;
+            //}
+            //catch (Exception ex)
+            //{
+            //    await _log.WriteErrorAsync(nameof(AzureLogHandler), "handle log table", $"{table.Name} ({table.Account})", ex);
+            //}
             return count;
         }
 
@@ -337,7 +337,7 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
                         TableOperators.And,
                         TableQuery.CombineFilters(
                             TableQuery.GenerateFilterCondition("RowKey", QueryComparisons.GreaterThan,
-                                fromTime.ToString("HH:mm:ss.fffffff")),
+                                time.ToString("HH:mm:ss.fffffff")),
                             TableOperators.And,
                             TableQuery.GenerateFilterCondition("RowKey", QueryComparisons.LessThanOrEqual,
                                 totome.ToString("HH:mm:ss.fffffff"))
@@ -363,7 +363,7 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
                             await _log.WriteInfoAsync(nameof(AzureLogHandler), nameof(LoadData),
                                 data.Count().ToString(), "Try send ====");
                             Console.WriteLine($"Try send {data.Count()}");
-                            foreach (var logEntity in data.OrderBy(e => e.Timestamp))
+                            foreach (var logEntity in data.OrderBy(e => e.DateTime))
                             {
                                 await SendDataToSocket(writer, item, logEntity);
                                 count++;
