@@ -6,17 +6,16 @@ using System.Linq;
 using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Transactions;
 using AzureStorage.Tables;
 using Common;
 using Common.Log;
 using Lykke.Job.LogReader.Core.Settings.JobSettings;
 using Lykke.Logs;
 using Lykke.SettingsReader;
-using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.WindowsAzure.Storage;
 using Microsoft.WindowsAzure.Storage.Table;
 using Newtonsoft.Json.Linq;
+using Lykke.Common.Log;
 
 namespace Lykke.Job.LogReader.PeriodicalHandlers
 {
@@ -32,12 +31,14 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
         private TcpClient _client;
         private StreamWriter _writer;
 
-        public AzureLogHandler(ILog log, ReaderSettings settings, IReloadingManager<DbSettings> dbsettings) :
-            base(nameof(AzureLogHandler), (int)TimeSpan.FromSeconds(1).TotalMilliseconds, log)
+        private static bool _inProgress = false;
+
+        public AzureLogHandler(ILogFactory logFactory, ReaderSettings settings, IReloadingManager<DbSettings> dbsettings) :
+            base(TimeSpan.FromMinutes(1), logFactory, nameof(AzureLogHandler))
         {
             _exclute = settings.ExcludeTables.ToList();
             _exclute.Add("LogReaderLog");
-            _log = log;
+            _log = logFactory.CreateLog(this);
             _settings = settings;
             _dbsettings = dbsettings;
         }
@@ -49,24 +50,33 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
 
         public override async Task Execute()
         {
-            if (_tables == null)
+            if (_inProgress)
+                return;
+
+            try
             {
-                _tables = new List<TableInfo>();
-#pragma warning disable 4014
-                FindTables();
-#pragma warning restore 4014
+                _inProgress = true;
+                if (_tables == null)
+                {
+                    _tables = new List<TableInfo>();
+                    await FindTables();
+                }
+
+                await _log.WriteInfoAsync(nameof(AzureLogHandler), nameof(Execute), "Begin of iteration");
+
+                var count = 0;
+
+                var tableList = _tables.ToArray();
+
+                var countFromTables = await Task.WhenAll(tableList.Select(HandleTableAndWatch).ToArray());
+                count = countFromTables.Sum();
+
+                await _log.WriteInfoAsync(nameof(AzureLogHandler), nameof(Execute), $"End of iteration, count events: {count}");
             }
-
-            await _log.WriteInfoAsync(nameof(AzureLogHandler), nameof(Execute), "Begin of iteration");
-
-            var count = 0;
-
-            var tableList = _tables.ToArray();
-
-            var countFromTables = await Task.WhenAll(tableList.Select(HandleTableAndWatch).ToArray());
-            count = countFromTables.Sum();
-
-            await _log.WriteInfoAsync(nameof(AzureLogHandler), nameof(Execute), $"End of iteration, count events: {count}");
+            finally
+            {
+                _inProgress = false;
+            }
         }
 
         private async Task<int> HandleTableAndWatch(TableInfo table)
@@ -109,6 +119,7 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
 
                     var tableClient = account.CreateCloudTableClient();
                     var names = (await tableClient.ListTablesSegmentedAsync(null)).Select(e => e.Name)
+                        .Where(x => x.ToLower().Contains("log"))
                         .Where(e => !_exclute.Contains(e)).ToArray();
 
                     await _log.WriteInfoAsync(nameof(AzureLogHandler), nameof(FindTables), accountName, $"Find {names.Length} tables in subscribtion");
@@ -168,7 +179,7 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
                     await _log.WriteErrorAsync(nameof(AzureLogHandler), nameof(FindTables), $"{accountName}", ex);
                 }
             }
-            
+
             await _log.WriteInfoAsync(nameof(AzureLogHandler), nameof(FindTables), $"Start handling {_tables.Count} tables");
         }
 
@@ -408,6 +419,12 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
         }
 
         public Task<string> Reload() => Task.FromResult(_value);
+
+        public bool WasReloadedFrom(DateTime dateTime)
+        {
+            throw new NotImplementedException();
+        }
+
         public bool HasLoaded => true;
         public string CurrentValue => _value;
     }
