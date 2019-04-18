@@ -32,6 +32,7 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
         private StreamWriter _writer;
 
         private static bool _inProgress = false;
+        private static SemaphoreSlim _tableReadsSemaphore = new SemaphoreSlim(8);
 
         public AzureLogHandler(ILogFactory logFactory, ReaderSettings settings, IReloadingManager<DbSettings> dbsettings) :
             base(TimeSpan.FromMinutes(1), logFactory, nameof(AzureLogHandler))
@@ -189,16 +190,24 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
 
             var nowDate = DateTime.UtcNow.Date;
 
-            var i = await CheckEvents(table);
-            index += i;
-
-            if (nowDate != DateTime.Parse(table.PartitionKey))
+            await _tableReadsSemaphore.WaitAsync();
+            try
             {
-                table.PartitionKey = DateTime.UtcNow.ToString("yyyy-MM-dd");
-                table.LastRowKey = "00";
-
-                i = await CheckEvents(table);
+                var i = await CheckEvents(table);
                 index += i;
+
+                if (nowDate != DateTime.Parse(table.PartitionKey))
+                {
+                    table.PartitionKey = DateTime.UtcNow.ToString("yyyy-MM-dd");
+                    table.LastRowKey = "00";
+
+                    i = await CheckEvents(table);
+                    index += i;
+                }
+            }
+            finally
+            {
+                _tableReadsSemaphore.Release();
             }
 
             return index;
