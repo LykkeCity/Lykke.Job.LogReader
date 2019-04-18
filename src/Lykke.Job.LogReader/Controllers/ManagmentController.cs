@@ -4,8 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Lykke.Job.LogReader.PeriodicalHandlers;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.CodeAnalysis.CSharp.Syntax;
-using Swashbuckle.AspNetCore.SwaggerGen;
+using Swashbuckle.AspNetCore.Annotations;
 
 namespace Lykke.Job.LogReader.Controllers
 {
