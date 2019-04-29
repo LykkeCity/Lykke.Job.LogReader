@@ -1,0 +1,35 @@
+LogReaderJob:
+    Db:
+        LogsConnString:
+            settings-key: LogReaderJob-LogsConnString
+            types:
+                - AzureTableStorage
+        ScanLogsConnString:
+            settings-key: LogReaderJob-ScanLogsConnString
+            types:
+                - JsonArray
+    Reader:
+        ParseContextAsJson:
+            settings-key: ParseContextValue
+        ExcludeTables:
+            settings-key: ExcludeTablesValue
+            types:
+                - JsonArray
+                - Optional
+        LogStash:
+            Host:
+                settings-key: LogStashHost
+            Port:
+                settings-key: LogStashPort
+SlackNotifications:
+    AzureQueue:
+        ConnectionString:
+            settings-key: SlackNotificationsConnString
+            types:
+                - AzureTableStorage
+        QueueName:
+            settings-key: SlackQueueName
+MonitoringServiceClient:
+    MonitoringServiceUrl:
+        settings-key: MonitoringServiceUrl
+

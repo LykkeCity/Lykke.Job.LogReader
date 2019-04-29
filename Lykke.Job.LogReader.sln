@@ -7,7 +7,13 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Lykke.Job.LogReader", "src\
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Lykke.Job.LogReader.Tests", "tests\Lykke.Job.LogReader.Tests\Lykke.Job.LogReader.Tests.csproj", "{3AC48AE7-2D02-4984-9ECE-6BDE803D88E2}"
 EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "test", "test", "{437BA8DA-D9B6-496F-81C9-004CD5992ECE}"
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "1. Tests", "1. Tests", "{437BA8DA-D9B6-496F-81C9-004CD5992ECE}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "0. Solution items", "0. Solution items", "{1649552B-B49D-41E5-8CB4-C18A9EA60577}"
+	ProjectSection(SolutionItems) = preProject
+		README.md = README.md
+		settings.yaml = settings.yaml
+	EndProjectSection
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

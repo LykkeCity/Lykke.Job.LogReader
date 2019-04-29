@@ -21,24 +21,26 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
 {
     public class AzureLogHandler : TimerPeriod
     {
-        private List<TableInfo> _tables;
+        private readonly ILogFactory _logFactory;
         private readonly ILog _log;
         private readonly ReaderSettings _settings;
         private readonly IReloadingManager<DbSettings> _dbsettings;
-        private readonly List<string> _exclute;
+        private readonly List<string> _exclude;
 
+        private List<TableInfo> _tables;
         private bool _isConnect = false;
         private TcpClient _client;
         private StreamWriter _writer;
 
         private static bool _inProgress = false;
-        private static SemaphoreSlim _tableReadsSemaphore = new SemaphoreSlim(8);
+        private static readonly SemaphoreSlim _tableReadsSemaphore = new SemaphoreSlim(8);
 
         public AzureLogHandler(ILogFactory logFactory, ReaderSettings settings, IReloadingManager<DbSettings> dbsettings) :
             base(TimeSpan.FromMinutes(1), logFactory, nameof(AzureLogHandler))
         {
-            _exclute = settings.ExcludeTables.ToList();
-            _exclute.Add("LogReaderLog");
+            _logFactory = logFactory;
+            _exclude = settings.ExcludeTables?.ToList() ?? new List<string>(1);
+            _exclude.Add("LogReaderLog");
             _log = logFactory.CreateLog(this);
             _settings = settings;
             _dbsettings = dbsettings;
@@ -63,16 +65,14 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
                     await FindTables();
                 }
 
-                await _log.WriteInfoAsync(nameof(AzureLogHandler), nameof(Execute), "Begin of iteration");
-
-                var count = 0;
+                _log.Info("Begin of iteration");
 
                 var tableList = _tables.ToArray();
 
                 var countFromTables = await Task.WhenAll(tableList.Select(HandleTableAndWatch).ToArray());
-                count = countFromTables.Sum();
+                var count = countFromTables.Sum();
 
-                await _log.WriteInfoAsync(nameof(AzureLogHandler), nameof(Execute), $"End of iteration, count events: {count}");
+                _log.Info($"End of iteration, count events: {count}");
             }
             finally
             {
@@ -91,13 +91,13 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
                 sw.Stop();
                 if (countNew > 600 || sw.ElapsedMilliseconds > 10000)
                 {
-                    await _log.WriteInfoAsync(nameof(AzureLogHandler), nameof(HandleTableAndWatch), $"table {table.Name} ({table.Account}), count: {countNew}, time: {sw.ElapsedMilliseconds} ms");
+                    _log.Info($"table {table.Name} ({table.Account}), count: {countNew}, time: {sw.ElapsedMilliseconds} ms");
                 }
                 count += countNew;
             }
             catch (Exception ex)
             {
-                await _log.WriteErrorAsync(nameof(AzureLogHandler), "handle log table", $"{table.Name} ({table.Account})", ex);
+                _log.Error(ex, context: $"{table.Name} ({table.Account})");
             }
             return count;
         }
@@ -107,23 +107,23 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
             await _dbsettings.Reload();
 
 
-            await _log.WriteInfoAsync(nameof(AzureLogHandler), nameof(FindTables), $"Begin find log tables, count accounts: {_dbsettings.CurrentValue.ScanLogsConnString.Length}");
+            _log.Info($"Begin find log tables, count accounts: {_dbsettings.CurrentValue.ScanLogsConnString.Length}");
 
             foreach (var connString in _dbsettings.CurrentValue.ScanLogsConnString)
             {
-                CloudStorageAccount account = CloudStorageAccount.Parse(connString);
+                var account = CloudStorageAccount.Parse(connString);
                 var accountName = account.Credentials.AccountName;
 
                 try
                 {
-                    await _log.WriteInfoAsync(nameof(AzureLogHandler), nameof(FindTables), accountName, $"Start scan account: {accountName}");
+                    _log.Info($"Start scan account: {accountName}", context: accountName);
 
                     var tableClient = account.CreateCloudTableClient();
                     var names = (await tableClient.ListTablesSegmentedAsync(null)).Select(e => e.Name)
                         .Where(x => x.ToLower().Contains("log"))
-                        .Where(e => !_exclute.Contains(e)).ToArray();
+                        .Where(e => !_exclude.Contains(e)).ToArray();
 
-                    await _log.WriteInfoAsync(nameof(AzureLogHandler), nameof(FindTables), accountName, $"Find {names.Length} tables in subscribtion");
+                    _log.Info($"Find {names.Length} tables in subscribtion", context: accountName);
 
                     var countAdd = 0;
 #if DEBUG
@@ -133,16 +133,17 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
                     {
                         try
                         {
-                            CloudTable table = tableClient.GetTableReference(name);
+                            var table = tableClient.GetTableReference(name);
                             var operationGet = new TableQuery<LogEntity>().Take(1);
                             var row = (await table.ExecuteQuerySegmentedAsync(operationGet, null)).FirstOrDefault();
-                            if (row != null && row.DateTime != DateTime.MinValue && row.Level != null && row.Msg != null)
+                            if (row != null && row.DateTime != DateTime.MinValue && row.Level != null
+                                && (row.Msg != null || row.Stack != null))
                             {
                                 if (_tables.All(e => e.Name != name || e.ConnString != connString))
                                 {
                                     var info = new TableInfo
                                     {
-                                        Entity = AzureTableStorage<LogEntity>.Create(new FakeReloadingManager(connString), name, _log),
+                                        Entity = AzureTableStorage<LogEntity>.Create(new FakeReloadingManager(connString), name, _logFactory),
                                         PartitionKey = DateTimeOffset.UtcNow.ToString("yyyy-MM-dd"),
                                         LastRowKey = DateTime.UtcNow.ToString("HH:mm:ss.fffffff"),
                                         Name = name,
@@ -157,15 +158,13 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
                             countHandling++;
                             Console.Write($"\rhandling: {countHandling} / {names.Length}                   ");
 #endif
-
-
                         }
                         catch (Exception ex)
                         {
 #if DEBUG
                             Console.WriteLine();
 #endif
-                            await _log.WriteErrorAsync(nameof(AzureLogHandler), nameof(FindTables), $"{accountName} - {name}", ex);
+                            _log.Error(ex, context: $"{accountName} - {name}");
                         }
                     }
 
@@ -173,15 +172,15 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
                     Console.WriteLine();
 #endif
 
-                    await _log.WriteInfoAsync(nameof(AzureLogHandler), nameof(FindTables), accountName, $"Add {countAdd} tables to handling");
+                    _log.Info($"Add {countAdd} tables to handling", context: accountName);
                 }
                 catch (Exception ex)
                 {
-                    await _log.WriteErrorAsync(nameof(AzureLogHandler), nameof(FindTables), $"{accountName}", ex);
+                    _log.Error(ex, context: $"{accountName}");
                 }
             }
 
-            await _log.WriteInfoAsync(nameof(AzureLogHandler), nameof(FindTables), $"Start handling {_tables.Count} tables");
+            _log.Info($"Start handling {_tables.Count} tables");
         }
 
         private async Task<int> HandleTable(TableInfo table)
@@ -232,7 +231,7 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
             }
             catch (Exception e)
             {
-                await _log.WriteInfoAsync(nameof(AzureLogHandler), nameof(CheckEvents), e.ToString());
+                _log.Info(e.ToString());
                 throw;
             }
 
@@ -249,7 +248,7 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
                 }
                 catch (Exception ex)
                 {
-                    await _log.WriteInfoAsync(nameof(AzureLogHandler), nameof(CheckEvents), ex.ToString());
+                    _log.Info(ex.ToString());
                     throw;
                 }
             }
@@ -294,7 +293,7 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
                         _writer = new StreamWriter(_client.GetStream());
                         _isConnect = true;
                         _lastConnectTime = DateTime.UtcNow;
-                        await _log.WriteInfoAsync(nameof(AzureLogHandler), nameof(SendData), "New connection established");
+                        _log.Info("New connection established");
                     }
 
                     await SendDataToSocket(_writer, table, logEntity);
@@ -302,7 +301,7 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
 
                     if ((DateTime.UtcNow - _lastConnectTime).Minutes >= 10)
                     {
-                        await _log.WriteInfoAsync(nameof(AzureLogHandler), nameof(SendData), "Force close connection (10 min)");
+                        _log.Info("Force close connection (10 min)");
                         _isConnect = false;
                     }
 
@@ -310,7 +309,7 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
                 }
                 catch (Exception ex)
                 {
-                    await _log.WriteInfoAsync(nameof(AzureLogHandler), nameof(SendData), $"{_settings.LogStash.Host}:_settings.LogStash.Port", ex.ToString());
+                    _log.Info(ex.ToString(), context: $"{_settings.LogStash.Host}:_settings.LogStash.Port");
                     _isConnect = false;
                     if (stopIferror)
                         return;
@@ -384,7 +383,7 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
                     }
                     catch (Exception e)
                     {
-                        await _log.WriteInfoAsync(nameof(AzureLogHandler), nameof(LoadData), e.ToString());
+                        _log.Info(e.ToString());
                         return $"count: {count}, error on get: {e}";
                     }
 
@@ -392,8 +391,7 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
                     {
                         try
                         {
-                            await _log.WriteInfoAsync(nameof(AzureLogHandler), nameof(LoadData),
-                                data.Count().ToString(), "Try send ====");
+                            _log.Info("Try send ====", context: data.Count().ToString());
                             Console.WriteLine($"Try send {data.Count()}");
                             foreach (var logEntity in data.OrderBy(e => e.DateTime))
                             {
@@ -403,14 +401,13 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
                         }
                         catch (Exception ex)
                         {
-                            await _log.WriteInfoAsync(nameof(AzureLogHandler), nameof(CheckEvents), ex.ToString());
+                            _log.Info(ex.ToString());
                             return $"count: {count}, erroron send: {ex}";
                         }
                     }
 
                     time = totome;
-                    await _log.WriteInfoAsync(nameof(AzureLogHandler), nameof(LoadData), data.Count().ToString(),
-                        $"send {count}, time {totome:HH:mm:ss.fffffff} =====");
+                    _log.Info($"send {count}, time {totome:HH:mm:ss.fffffff} =====", context: data.Count().ToString());
                 }
 
                 return $"count: {count}";
