@@ -9,13 +9,13 @@ using System.Threading.Tasks;
 using AzureStorage.Tables;
 using Common;
 using Common.Log;
+using Lykke.Common.Log;
 using Lykke.Job.LogReader.Core.Settings.JobSettings;
 using Lykke.Logs;
 using Lykke.SettingsReader;
 using Microsoft.WindowsAzure.Storage;
 using Microsoft.WindowsAzure.Storage.Table;
 using Newtonsoft.Json.Linq;
-using Lykke.Common.Log;
 
 namespace Lykke.Job.LogReader.PeriodicalHandlers
 {
@@ -106,10 +106,10 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
         {
             await _dbsettings.Reload();
 
-
             _log.Info($"Begin find log tables, count accounts: {_dbsettings.CurrentValue.ScanLogsConnString.Length}");
 
-            foreach (var connString in _dbsettings.CurrentValue.ScanLogsConnString)
+            var connStrings = _dbsettings.CurrentValue.ScanLogsConnString;
+            foreach (var connString in connStrings)
             {
                 var account = CloudStorageAccount.Parse(connString);
                 var accountName = account.Credentials.AccountName;
@@ -119,9 +119,11 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
                     _log.Info($"Start scan account: {accountName}", context: accountName);
 
                     var tableClient = account.CreateCloudTableClient();
-                    var names = (await tableClient.ListTablesSegmentedAsync(null)).Select(e => e.Name)
-                        .Where(x => x.ToLower().Contains("log"))
-                        .Where(e => !_exclude.Contains(e)).ToArray();
+                    var tables = await tableClient.ListTablesSegmentedAsync(null);
+                    var names = tables
+                        .Select(e => e.Name)
+                        .Where(x => (tables.Results.Count == 1 || x.ToLower().Contains("log")) && !_exclude.Contains(x))
+                        .ToArray();
 
                     _log.Info($"Find {names.Length} tables in subscribtion", context: accountName);
 
