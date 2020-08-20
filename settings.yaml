@@ -16,11 +16,10 @@ LogReaderJob:
             types:
                 - JsonArray
                 - Optional
-        LogStash:
-            Host:
-                settings-key: LogStashHost
-            Port:
-                settings-key: LogStashPort
+
+        LogAggregatorHost:
+            settings-key: LogAggregatorHostValue
+
 SlackNotifications:
     AzureQueue:
         ConnectionString:

@@ -3,12 +3,15 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
 using AzureStorage.Tables;
 using Common;
 using Common.Log;
+using Flurl;
+using Flurl.Http;
 using Lykke.Job.LogReader.Core.Settings.JobSettings;
 using Lykke.Logs;
 using Lykke.SettingsReader;
@@ -34,6 +37,7 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
 
         private static bool _inProgress = false;
         private static readonly SemaphoreSlim _tableReadsSemaphore = new SemaphoreSlim(8);
+        private string _aggregatorUrl;
 
         public AzureLogHandler(ILogFactory logFactory, ReaderSettings settings, IReloadingManager<DbSettings> dbsettings) :
             base(TimeSpan.FromMinutes(1), logFactory, nameof(AzureLogHandler))
@@ -44,6 +48,10 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
             _log = logFactory.CreateLog(this);
             _settings = settings;
             _dbsettings = dbsettings;
+
+            var url = new Url(settings.LogAggregatorHost);
+            url.AppendPathSegment("api/log-collector/log");
+            _aggregatorUrl = url.ToString();
         }
 
         public IReadOnlyList<TableInfo> GetTableInfo()
@@ -239,11 +247,20 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
             {
                 try
                 {
-                    foreach (var logEntity in data.OrderBy(e => e.Timestamp))
+                    var content = data.OrderBy(e => e.Timestamp).ToList();
+
+                    if (content.Count > 1)
                     {
-                        await SendData(table, logEntity);
-                        table.LastRowKey = logEntity.RowKey;
-                        index++;
+                        var success = await SendDataToAggregator(table, content);
+
+                        if (!success)
+                        {
+                            throw new Exception("Cannot delivery batch to Aggregator");
+                        }
+
+                        index += content.Count;
+
+                        table.LastRowKey = content.Last().RowKey;
                     }
                 }
                 catch (Exception ex)
@@ -254,6 +271,54 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
             }
 
             return index;
+        }
+
+        private async Task<bool> SendDataToAggregator(TableInfo table, IEnumerable<LogEntity> logEntityList)
+        {
+            var data = logEntityList.Select(logEntity =>
+                {
+                    var dto = new LogDto()
+                    {
+                        DateTime = logEntity.DateTime,
+                        Level = logEntity.Level,
+                        Version = logEntity.Version,
+                        Component = logEntity.Component,
+                        Process = logEntity.Process,
+                        Context = logEntity.Context,
+                        Type = logEntity.Type,
+                        Stack = logEntity.Stack,
+                        Msg = logEntity.Msg,
+                        Table = table.Name,
+                        AccountName = table.Account,
+                        Env = logEntity.Env
+                    };
+                    PreparingContext(dto);
+
+                    var json = dto.ToJson();
+
+                    return new
+                    {
+                        topic = "lykke-logs",
+                        sender = $"{table.Account}.{table.Name}",
+                        level = logEntity.Level,
+                        document = json
+                    };
+                })
+                .ToList();
+
+            
+
+            try
+            {
+                var result = await _aggregatorUrl.PostJsonAsync(data);
+
+                return result.StatusCode == HttpStatusCode.OK;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Cannot sent logs to aggregator: {ex}");
+                return false;
+            }
         }
 
         private void PreparingContext(LogDto logEntity)
@@ -274,79 +339,6 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
             }
         }
 
-        private readonly SemaphoreSlim _lock = new SemaphoreSlim(1, 1);
-        private DateTime _lastConnectTime = DateTime.UtcNow;
-
-        private async Task SendData(TableInfo table, LogEntity logEntity, bool stopIferror = false)
-        {
-            while (true)
-            {
-                await _lock.WaitAsync();
-                try
-                {
-                    if (!_isConnect || _writer == null)
-                    {
-                        _writer?.Dispose();
-                        _client?.Dispose();
-
-                        _client = new TcpClient(_settings.LogStash.Host, _settings.LogStash.Port);
-                        _writer = new StreamWriter(_client.GetStream());
-                        _isConnect = true;
-                        _lastConnectTime = DateTime.UtcNow;
-                        _log.Info("New connection established");
-                    }
-
-                    await SendDataToSocket(_writer, table, logEntity);
-
-
-                    if ((DateTime.UtcNow - _lastConnectTime).Minutes >= 10)
-                    {
-                        _log.Info("Force close connection (10 min)");
-                        _isConnect = false;
-                    }
-
-                    return;
-                }
-                catch (Exception ex)
-                {
-                    _log.Info(ex.ToString(), context: $"{_settings.LogStash.Host}:_settings.LogStash.Port");
-                    _isConnect = false;
-                    if (stopIferror)
-                        return;
-                }
-                finally
-                {
-                    _lock.Release();
-                }
-
-                if (!_isConnect)
-                    await Task.Delay(2000);
-            }
-        }
-
-        private async Task SendDataToSocket(StreamWriter writer, TableInfo table, LogEntity logEntity)
-        {
-            var dto = new LogDto()
-            {
-                DateTime = logEntity.DateTime,
-                Level = logEntity.Level,
-                Version = logEntity.Version,
-                Component = logEntity.Component,
-                Process = logEntity.Process,
-                Context = logEntity.Context,
-                Type = logEntity.Type,
-                Stack = logEntity.Stack,
-                Msg = logEntity.Msg,
-                Table = table.Name,
-                AccountName = table.Account,
-                Env = logEntity.Env
-            };
-            PreparingContext(dto);
-
-            var json = dto.ToJson();
-
-            await writer.WriteLineAsync(json);
-        }
 
         public async Task<string> LoadData(string account, string table, string partitionKey, DateTime fromTime, DateTime toTime)
         {
@@ -356,8 +348,6 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
 
             var count = 0;
 
-            using (var client = new TcpClient(_settings.LogStash.Host, _settings.LogStash.Port))
-            using (var writer = new StreamWriter(client.GetStream()))
             {
                 var time = fromTime;
                 while (time <= toTime)
@@ -393,11 +383,16 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
                         {
                             _log.Info("Try send ====", context: data.Count().ToString());
                             Console.WriteLine($"Try send {data.Count()}");
-                            foreach (var logEntity in data.OrderBy(e => e.DateTime))
+
+                            var content = data.OrderBy(e => e.DateTime).ToList();
+
+                            var success = await SendDataToAggregator(item, content);
+                            if (!success)
                             {
-                                await SendDataToSocket(writer, item, logEntity);
-                                count++;
+                                throw new Exception("Cannot delivery data to Aggregator");
                             }
+
+                            count += content.Count;
                         }
                         catch (Exception ex)
                         {
