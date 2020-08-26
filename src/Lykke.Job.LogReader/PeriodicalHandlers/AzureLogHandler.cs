@@ -225,7 +225,7 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
             var index = 0;
 
             var batchCount = 0;
-            var batchIterationLimit = 6;
+            var batchIterationLimit = 20;
 
             _log.Info($"CheckEvents. Acc: {table.Account}, table: {table.Name}");
 
@@ -238,12 +238,12 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
                                 table.PartitionKey),
                             TableOperators.And,
                             TableQuery.GenerateFilterCondition("RowKey", QueryComparisons.GreaterThan, table.LastRowKey)
-                        )).Take(500);
+                        )).Take(1000);
 
                 IEnumerable<LogEntity> data;
                 try
                 {
-                    _log.Info($"Fetching data Iteration: {6 - batchIterationLimit + 1}, last-key: {table.LastRowKey}");
+                    Console.WriteLine($"Try Fetching data Iteration: {20 - batchIterationLimit + 1}, last-key: {table.LastRowKey},  Acc: {table.Account}, table: {table.Name}");
                     data = await table.Entity.WhereAsync(query);
                 }
                 catch (Exception e)
@@ -258,7 +258,7 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
                     {
                         var content = data.OrderBy(e => e.Timestamp).ToList();
 
-                        _log.Info($"Fetched data Iteration: {6 - batchIterationLimit + 1}, Count: {content.Count}");
+                        Console.WriteLine($"Fetched data Iteration: {20 - batchIterationLimit + 1}, Count: {content.Count},  Acc: {table.Account}, table: {table.Name}");
 
                         if (content.Count > 1)
                         {
@@ -283,9 +283,9 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
 
                     batchIterationLimit--;
                 }
-            } while (batchCount >= 500 && batchIterationLimit > 0);
+            } while (batchCount >= 1000 && batchIterationLimit > 0);
 
-            _log.Warning($"After 6 iteration still fetched max count of items, maybe cursor is lag");
+            Console.WriteLine($"WARNING: After 20 iteration still fetched max count . Acc: {table.Account}, table: {table.Name}, ast-key: {table.LastRowKey}");
 
             return index;
         }
