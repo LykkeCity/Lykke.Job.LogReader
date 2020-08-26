@@ -39,6 +39,9 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
         private static readonly SemaphoreSlim _tableReadsSemaphore = new SemaphoreSlim(8);
         private string _aggregatorUrl;
 
+        private int _countReadIterations = 20;
+        private int _batchSize = 5000;
+
         public AzureLogHandler(ILogFactory logFactory, ReaderSettings settings, IReloadingManager<DbSettings> dbsettings) :
             base(TimeSpan.FromMinutes(1), logFactory, nameof(AzureLogHandler))
         {
@@ -52,6 +55,15 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
             var url = new Url(settings.LogAggregatorHost);
             url.AppendPathSegment("api/log-collector/log");
             _aggregatorUrl = url.ToString();
+
+            var cri = Environment.GetEnvironmentVariable("COUNT_READ_ITERATIONS");
+            var bs = Environment.GetEnvironmentVariable("BATCH_SIZE");
+
+            if (!string.IsNullOrEmpty(cri))
+                _countReadIterations = int.Parse(cri);
+
+            if (!string.IsNullOrEmpty(bs))
+                _batchSize = int.Parse(bs);
         }
 
         public IReadOnlyList<TableInfo> GetTableInfo()
@@ -225,7 +237,7 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
             var index = 0;
 
             var batchCount = 0;
-            var batchIterationLimit = 20;
+            var batchIterationLimit = _countReadIterations;
 
             _log.Info($"CheckEvents. Acc: {table.Account}, table: {table.Name}");
 
@@ -238,12 +250,12 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
                                 table.PartitionKey),
                             TableOperators.And,
                             TableQuery.GenerateFilterCondition("RowKey", QueryComparisons.GreaterThan, table.LastRowKey)
-                        )).Take(1000);
+                        )).Take(_batchSize);
 
                 IEnumerable<LogEntity> data;
                 try
                 {
-                    Console.WriteLine($"Try Fetching data Iteration: {20 - batchIterationLimit + 1}, last-key: {table.LastRowKey},  Acc: {table.Account}, table: {table.Name}");
+                    Console.WriteLine($"Try Fetching data Iteration: {_countReadIterations - batchIterationLimit + 1}, last-key: {table.LastRowKey},  Acc: {table.Account}, table: {table.Name}");
                     data = await table.Entity.WhereAsync(query);
                 }
                 catch (Exception e)
@@ -258,7 +270,7 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
                     {
                         var content = data.OrderBy(e => e.Timestamp).ToList();
 
-                        Console.WriteLine($"Fetched data Iteration: {20 - batchIterationLimit + 1}, Count: {content.Count},  Acc: {table.Account}, table: {table.Name}");
+                        Console.WriteLine($"Fetched data Iteration: {_countReadIterations - batchIterationLimit + 1}, Count: {content.Count},  Acc: {table.Account}, table: {table.Name}");
 
                         if (content.Count > 1)
                         {
@@ -283,9 +295,12 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
 
                     batchIterationLimit--;
                 }
-            } while (batchCount >= 1000 && batchIterationLimit > 0);
+            } while (batchCount >= _batchSize && batchIterationLimit > 0);
 
-            Console.WriteLine($"WARNING: After 20 iteration still fetched max count . Acc: {table.Account}, table: {table.Name}, ast-key: {table.LastRowKey}");
+            if (batchCount < _batchSize)
+            {
+                Console.WriteLine($"WARNING: After {_countReadIterations} iteration still fetched max count . Acc: {table.Account}, table: {table.Name}, ast-key: {table.LastRowKey}, timestamp: {DateTime.UtcNow:HH:mm:ss}");
+            }
 
             return index;
         }
