@@ -64,6 +64,9 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
 
             if (!string.IsNullOrEmpty(bs))
                 _batchSize = int.Parse(bs);
+
+            Console.WriteLine($"COUNT_READ_ITERATIONS: {_countReadIterations}");
+            Console.WriteLine($"BATCH_SIZE: {_batchSize}");
         }
 
         public IReadOnlyList<TableInfo> GetTableInfo()
@@ -297,7 +300,7 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
                 }
             } while (batchCount >= _batchSize && batchIterationLimit > 0);
 
-            if (batchCount < _batchSize)
+            if (batchCount >= _batchSize)
             {
                 Console.WriteLine($"WARNING: After {_countReadIterations} iteration still fetched max count . Acc: {table.Account}, table: {table.Name}, ast-key: {table.LastRowKey}, timestamp: {DateTime.UtcNow:HH:mm:ss}");
             }
