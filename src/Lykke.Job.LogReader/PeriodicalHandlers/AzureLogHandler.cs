@@ -224,51 +224,68 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
         {
             var index = 0;
 
-            var query = new TableQuery<LogEntity>()
-                .Where(
-                    TableQuery.CombineFilters(
-                        TableQuery.GenerateFilterCondition("PartitionKey", QueryComparisons.Equal, table.PartitionKey),
-                        TableOperators.And,
-                        TableQuery.GenerateFilterCondition("RowKey", QueryComparisons.GreaterThan, table.LastRowKey)
-                    ));
+            var batchCount = 0;
+            var batchIterationLimit = 6;
 
-            IEnumerable<LogEntity> data;
-            try
-            {
-                data = await table.Entity.WhereAsync(query);
-            }
-            catch (Exception e)
-            {
-                _log.Info(e.ToString());
-                throw;
-            }
+            _log.Info($"CheckEvents. Acc: {table.Account}, table: {table.Name}");
 
-            if (data != null)
+            do
             {
+                var query = new TableQuery<LogEntity>()
+                    .Where(
+                        TableQuery.CombineFilters(
+                            TableQuery.GenerateFilterCondition("PartitionKey", QueryComparisons.Equal,
+                                table.PartitionKey),
+                            TableOperators.And,
+                            TableQuery.GenerateFilterCondition("RowKey", QueryComparisons.GreaterThan, table.LastRowKey)
+                        )).Take(500);
+
+                IEnumerable<LogEntity> data;
                 try
                 {
-                    var content = data.OrderBy(e => e.Timestamp).ToList();
-
-                    if (content.Count > 1)
-                    {
-                        var success = await SendDataToAggregator(table, content);
-
-                        if (!success)
-                        {
-                            throw new Exception("Cannot delivery batch to Aggregator");
-                        }
-
-                        index += content.Count;
-
-                        table.LastRowKey = content.Last().RowKey;
-                    }
+                    _log.Info($"Fetching data Iteration: {6 - batchIterationLimit + 1}, last-key: {table.LastRowKey}");
+                    data = await table.Entity.WhereAsync(query);
                 }
-                catch (Exception ex)
+                catch (Exception e)
                 {
-                    _log.Info(ex.ToString());
+                    _log.Info(e.ToString());
                     throw;
                 }
-            }
+
+                if (data != null)
+                {
+                    try
+                    {
+                        var content = data.OrderBy(e => e.Timestamp).ToList();
+
+                        _log.Info($"Fetched data Iteration: {6 - batchIterationLimit + 1}, Count: {content.Count}");
+
+                        if (content.Count > 1)
+                        {
+                            var success = await SendDataToAggregator(table, content);
+
+                            if (!success)
+                            {
+                                throw new Exception("Cannot delivery batch to Aggregator");
+                            }
+
+                            index += content.Count;
+                            batchCount = content.Count;
+
+                            table.LastRowKey = content.Last().RowKey;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _log.Info(ex.ToString());
+                        throw;
+                    }
+
+                    batchIterationLimit--;
+                }
+            } while (batchCount >= 500 && batchIterationLimit > 0);
+
+            _log.Warning($"After 6 iteration still fetched max count of items, maybe cursor is lag");
 
             return index;
         }
