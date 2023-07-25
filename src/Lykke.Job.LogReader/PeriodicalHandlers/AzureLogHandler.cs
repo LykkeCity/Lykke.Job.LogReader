@@ -333,7 +333,7 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
 
                     return new
                     {
-                        topic = "lykke-logs",
+                        topic = _settings.ElasticTopic,
                         sender = $"{table.Account}.{table.Name}",
                         level = logEntity.Level,
                         document = json
