@@ -11,6 +11,10 @@ LogReaderJob:
     Reader:
         ParseContextAsJson:
             settings-key: ParseContextValue
+        ElasticTopic:
+            settings-key: ElasticTopic
+            types:
+              - Optional
         ExcludeTables:
             settings-key: ExcludeTablesValue
             types:
