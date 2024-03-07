@@ -142,11 +142,17 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
                     _log.Info($"Start scan account: {accountName}", context: accountName);
 
                     var tableClient = account.CreateCloudTableClient();
-                    var names = (await tableClient.ListTablesSegmentedAsync(null)).Select(e => e.Name)
-                        .Where(x => x.ToLower().Contains("log"))
-                        .Where(e => !_exclude.Contains(e)).ToArray();
+                    var allTables = (await tableClient.ListTablesSegmentedAsync(null)).ToList();
 
-                    _log.Info($"Find {names.Length} tables in subscribtion", context: accountName);
+                    _log.Info($"Found {allTables.Count} tables in subscribtion", context: accountName);
+
+                    var names = allTables
+                        .Select(e => e.Name)
+                        .Where(x => x.ToLower().Contains("log"))
+                        .Where(e => !_exclude.Contains(e))
+                        .ToArray();
+
+                    _log.Info($"Found {names.Length} tables after filtering", context: accountName);
 
                     var countAdd = 0;
 #if DEBUG
