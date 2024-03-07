@@ -142,17 +142,7 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
                     _log.Info($"Start scan account: {accountName}", context: accountName);
 
                     var tableClient = account.CreateCloudTableClient();
-                    var allTables = (await tableClient.ListTablesSegmentedAsync(null)).ToList();
-
-                    _log.Info($"Found {allTables.Count} tables in subscribtion", context: accountName);
-
-                    var names = allTables
-                        .Select(e => e.Name)
-                        .Where(x => x.ToLower().Contains("log"))
-                        .Where(e => !_exclude.Contains(e))
-                        .ToArray();
-
-                    _log.Info($"Found {names.Length} tables after filtering", context: accountName);
+                    var names = await GetLogTableNames(tableClient, accountName);
 
                     var countAdd = 0;
 #if DEBUG
@@ -210,6 +200,39 @@ namespace Lykke.Job.LogReader.PeriodicalHandlers
             }
 
             _log.Info($"Start handling {_tables.Count} tables");
+        }
+
+        private async Task<IReadOnlyList<string>> GetLogTableNames(CloudTableClient tableClient, string accountName)
+        {
+            var tableNames = new List<string>();
+            TableResultSegment tablesListResponse;
+            TableContinuationToken continuationToken = null;
+            var page = 0;
+
+            do
+            {
+                tablesListResponse = await tableClient.ListTablesSegmentedAsync(continuationToken);
+                continuationToken = tablesListResponse.ContinuationToken;
+
+                var unfilteredTablesPage = tablesListResponse.ToList();
+
+                _log.Info($"Found {unfilteredTablesPage.Count} all tables in the subscribtion. Page: {page}", context: accountName);
+
+                var logTableNamesPage = unfilteredTablesPage
+                    .Select(e => e.Name)
+                    .Where(x => x.ToLower().Contains("log"))
+                    .Where(e => !_exclude.Contains(e))
+                    .ToList();
+
+                _log.Info($"Found {logTableNamesPage.Count} log tables. Has next page: {continuationToken != null}", context: accountName);
+
+                tableNames.AddRange(logTableNamesPage);
+            }
+            while (continuationToken != null);
+
+            _log.Info($"Found {tableNames.Count} log tables in total", context: accountName);
+
+            return tableNames;
         }
 
         private async Task<int> HandleTable(TableInfo table)
